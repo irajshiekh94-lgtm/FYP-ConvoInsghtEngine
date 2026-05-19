@@ -1,0 +1,50 @@
+# Core Dependencies
+torch>=2.0.0
+transformers>=4.30.0
+openai-whisper>=20231117
+
+# FastAPI & Server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# Audio Processing
+pydub>=0.25.1
+noisereduce>=3.0.0
+soundfile>=0.12.1
+sounddevice>=0.4.6
+scipy>=1.10.0
+numpy>=1.24.0
+
+# Speaker Diarization
+pyannote.audio>=3.1.0
+# Note: Requires accepting license at https://huggingface.co/pyannote/speaker-diarization
+# And setting HUGGINGFACE_TOKEN environment variable
+
+# Language Detection & Translation
+langdetect>=1.0.9
+deep-translator>=1.11.4
+
+# Advanced Text Normalization
+better-profanity>=0.7.0
+
+# Text Processing
+word2number>=1.1
+
+# Optional: Better Performance
+# accelerate>=0.20.0  # Faster model loading with transformers
+
+# Development (uncomment if needed)
+# pytest>=7.4.0
+# black>=23.0.0
+# flake8>=6.0.0
+# jupyter>=1.0.0
+
+fastapi
+uvicorn
+torch
+transformers
+librosa
+soundfile
+numpy
+python-multipart
