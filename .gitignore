@@ -1,8 +1,36 @@
-venv/
+# Python
 __pycache__/
-*.pyc
-.env
-*.pkl
-*.h5
-*.pt
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+*.egg-info/
+.ipynb_checkpoints/
 
+# Node
+node_modules/
+dist/
+build/
+*.log
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# MongoDB
+mongodb_data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+firebase-key.json
+*.pem

@@ -48,3 +48,23 @@ librosa
 soundfile
 numpy
 python-multipart
+
+# Web Framework
+flask==3.0.0
+flask-cors==4.0.0
+flask-jwt-extended==4.6.0
+
+# MongoDB
+pymongo==4.6.1
+motor==3.3.2
+
+# ML & NLP
+scikit-learn==1.3.2
+numpy==1.24.3
+google-generativeai==0.3.2
+transformers==4.35.2
+torch==2.1.2
+
+# Utilities
+python-dotenv==1.0.0
+bcrypt==4.1.2
