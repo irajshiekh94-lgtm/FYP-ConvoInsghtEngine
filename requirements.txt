@@ -68,3 +68,4 @@ torch==2.1.2
 # Utilities
 python-dotenv==1.0.0
 bcrypt==4.1.2
+
