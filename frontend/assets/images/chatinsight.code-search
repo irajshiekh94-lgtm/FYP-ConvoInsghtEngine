@@ -1,0 +1,83 @@
+# Query: chatinsight
+# ContextLines: 1
+
+19 results - 9 files
+
+app.json:
+   2    "expo": {
+   3:     "name": "ConvoInsight",
+   4:     "slug": "convoinsight",
+   5      "version": "1.0.0",
+
+   7      "icon": "./assets/images/icon.png",
+   8:     "scheme": "convoinsight",
+   9      "userInterfaceStyle": "automatic",
+
+  12        "supportsTablet": true,
+  13:       "bundleIdentifier": "com.convoinsight.app"
+  14      },
+
+  23        "predictiveBackGestureEnabled": false,
+  24:       "package": "com.convoinsight.app"
+  25      },
+
+client/hooks/useActions.ts:
+  4  
+  5: const ACTIONS_STORAGE_KEY = "@chatinsight_actions";
+  6  
+
+client/hooks/useChats.ts:
+  4  
+  5: const CHATS_STORAGE_KEY = "@chatinsight_chats";
+  6  
+
+client/hooks/useSettings.ts:
+   4  
+   5: const SETTINGS_STORAGE_KEY = "@chatinsight_settings";
+   6  
+
+  48          SETTINGS_STORAGE_KEY,
+  49:         "@chatinsight_chats",
+  50:         "@chatinsight_actions",
+  51        ]);
+
+client/hooks/useTheme.ts:
+  5  
+  6: const THEME_STORAGE_KEY = "@chatinsight_theme";
+  7  
+
+client/navigation/HomeStackNavigator.tsx:
+  21          options={{
+  22:           headerTitle: () => <HeaderTitle title="ChatInsight" />,
+  23          }}
+
+client/screens/HomeScreen.tsx:
+  144        <ThemedText type="h3" style={styles.emptyTitle}>
+  145:         Welcome to ChatInsight
+  146        </ThemedText>
+
+client/screens/login.tsx:
+   44        };
+   45:       localStorage.setItem('chatInsightUser', JSON.stringify(userData));
+   46        onAuthComplete?.();
+
+   59            </div>
+   60:           <h1 className="text-3xl font-bold text-white mb-2">ChatInsight</h1>
+   61            <p className="text-gray-400 text-sm">
+
+   75                <p className="text-gray-400 text-sm text-center mb-8">
+   76:                 ChatInsight will send you an SMS with a verification code
+   77                </p>
+
+  238          <p className="text-center text-gray-500 text-xs mt-6 px-8">
+  239:           By continuing, you agree to ChatInsight's Terms of Service and Privacy Policy
+  240          </p>
+
+client/screens/ProfileScreen.tsx:
+  186          <ThemedText type="h3" style={styles.profileName}>
+  187:           ChatInsight User
+  188          </ThemedText>
+
+  258          <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+  259:           ChatInsight v1.0.0
+  260          </ThemedText>

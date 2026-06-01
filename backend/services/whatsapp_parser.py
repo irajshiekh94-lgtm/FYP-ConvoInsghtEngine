@@ -2,171 +2,230 @@
 WhatsApp Chat Parser - ConvoInsight Engine
 
 Reads exported WhatsApp .txt files and converts them
-into clean message dictionaries ready to save to MongoDB.
+into clean message dictionaries ready for the analysis pipeline.
 
-Handles format: "13/05/2026, 4:25 pm - Sender: Message"
+Handles format:
+13/05/2026, 4:25 pm - Sender: Message
 """
 
+import logging
+import os
 import re
 from datetime import datetime
+from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 
-# ─────────────────────────────────────────────────────────
-# REGEX: matches lines like:
-# "13/05/2026, 4:25 pm - Javariya Yusra Friend: Hello"
-# "13/05/2026, 4:25 pm - Yusra Adil❤️ created group"
-# ─────────────────────────────────────────────────────────
+# ------------------------------------------------------------------
+# WhatsApp message line
+# Example:
+# 13/05/2026, 4:22 pm - Ali: Hello
+# 13/05/2026, 4:22 pm - Ali: Hello
+# ------------------------------------------------------------------
 MESSAGE_PATTERN = re.compile(
-    r'^(\d{2}/\d{2}/\d{4}),\s(\d{1,2}:\d{2}\s(?:am|pm))\s-\s(.+?):\s(.+)$'
+    r'^(\d{2}/\d{2}/\d{4}),\s*'
+    r'(\d{1,2}:\d{2}[\s\u202F\u00A0]*(?:am|pm|AM|PM))'
+    r'\s-\s(.+?):\s(.+)$'
 )
 
+# ------------------------------------------------------------------
+# WhatsApp system messages
+# Example:
+# 13/05/2026, 4:22 pm - Ali created group
+# ------------------------------------------------------------------
 SYSTEM_PATTERN = re.compile(
-    r'^(\d{2}/\d{2}/\d{4}),\s(\d{1,2}:\d{2}\s(?:am|pm))\s-\s(.+)$'
+    r'^(\d{2}/\d{2}/\d{4}),\s*'
+    r'(\d{1,2}:\d{2}[\s\u202F\u00A0]*(?:am|pm|AM|PM))'
+    r'\s-\s(.+)$'
 )
 
 
 def parse_timestamp(date_str, time_str):
-    """Convert '13/05/2026' and '4:25 pm' into a datetime object"""
+    """
+    Convert WhatsApp timestamp into datetime object.
+
+    Supports:
+    13/05/2026, 4:22 pm
+    13/05/2026, 4:22 PM
+    13/05/2026, 4:22 pm
+    """
+
     try:
-        return datetime.strptime(f"{date_str} {time_str}", "%d/%m/%Y %I:%M %p")
-    except:
+        clean_time = (
+            time_str
+            .replace("\u202F", " ")
+            .replace("\u00A0", " ")
+            .strip()
+            .upper()
+        )
+
+        return datetime.strptime(
+            f"{date_str} {clean_time}",
+            "%d/%m/%Y %I:%M %p"
+        )
+
+    except Exception:
         return None
 
 
 def classify_message(content):
     """
-    Decide what type a message is:
-    - text     → normal message
-    - media    → image/video/audio was shared
-    - system   → WhatsApp system message (group created, added, etc.)
-    - deleted  → message was deleted
+    Determine message type.
     """
-    if content.strip() == "<Media omitted>":
+
+    content = content.strip()
+
+    if content == "<Media omitted>":
         return "media"
+
     if "<This message was deleted>" in content:
         return "deleted"
+
     return "text"
 
 
-def parse_chat_file(filepath):
-    """
-    Main function — reads a .txt file and returns:
-    {
-      'chatName': str,
-      'chatType': 'group' or 'individual',
-      'participants': [list of sender names],
-      'messages': [list of message dicts]
-    }
-    """
-    with open(filepath, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-
+def _parse_lines(lines: List[str]) -> dict:
+    """Parse WhatsApp export lines into structured chat data."""
     messages = []
     participants = set()
     current_message = None
 
-    for line in lines:
-        line = line.strip()
+    for raw_line in lines:
+
+        line = raw_line.strip()
+
         if not line:
             continue
 
-        # Skip the encryption notice line
+        # Skip encryption banner
         if "end-to-end encrypted" in line:
             continue
 
-        # Try to match a normal message line
-        match = MESSAGE_PATTERN.match(line)
-        if match:
-            # Save previous message if exists
+        # ----------------------------------------------------------
+        # Normal message
+        # ----------------------------------------------------------
+        msg_match = MESSAGE_PATTERN.match(line)
+
+        if msg_match:
+
             if current_message:
                 messages.append(current_message)
 
-            date_str, time_str, sender, content = match.groups()
+            date_str, time_str, sender, content = msg_match.groups()
+
             timestamp = parse_timestamp(date_str, time_str)
-            msg_type = classify_message(content)
+            message_type = classify_message(content)
 
             participants.add(sender)
 
             current_message = {
                 "sender": sender,
-                "content": content if msg_type == "text" else "",
+                "content": content if message_type == "text" else "",
                 "timestamp": timestamp,
-                "messageType": msg_type,
+                "messageType": message_type,
                 "rawTimestamp": f"{date_str} {time_str}"
             }
+
             continue
 
-        # Try system message (group created, added, etc.)
+        # ----------------------------------------------------------
+        # System message
+        # ----------------------------------------------------------
         sys_match = SYSTEM_PATTERN.match(line)
+
         if sys_match:
+
             if current_message:
                 messages.append(current_message)
                 current_message = None
+
             continue
 
-        # If no match, this line is a continuation of the previous message
+        # ----------------------------------------------------------
+        # Multiline continuation
+        # ----------------------------------------------------------
         if current_message:
             current_message["content"] += " " + line
 
-    # Don't forget the last message
     if current_message:
         messages.append(current_message)
 
-    # Figure out chat name from filename
-    # e.g. "WhatsApp_Chat_with_Fyp_chat.txt" → "Fyp chat"
-    filename = filepath.split("/")[-1].split("\\")[-1]
-    chat_name = filename.replace("WhatsApp_Chat_with_", "").replace(".txt", "").replace("_", " ")
-
-    # Group or individual?
     chat_type = "group" if len(participants) > 2 else "individual"
 
+    if len(messages) == 0:
+        logger.warning("No messages parsed — check WhatsApp export format")
+    else:
+        logger.info("Parsed %d messages, %d participants", len(messages), len(participants))
+
     return {
-        "chatName": chat_name,
+        "chatName": "",
         "chatType": chat_type,
-        "participants": list(participants),
+        "participants": sorted(list(participants)),
         "totalMessages": len(messages),
-        "messages": messages
+        "messages": messages,
     }
 
 
-def parse_chat_from_text(text_content, chat_name="Uploaded Chat"):
-    """
-    Same as above but accepts raw text string instead of file path.
-    Used when frontend sends file content directly to Flask API.
-    """
-    import tempfile, os
+def _chat_name_from_filename(filepath: str) -> str:
+    filename = os.path.basename(filepath)
+    return (
+        filename.replace("WhatsApp Chat with ", "")
+        .replace("WhatsApp_Chat_with_", "")
+        .replace(".txt", "")
+        .replace("_", " ")
+        .strip()
+    )
 
-    # Write to temp file and parse
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt',
-                                     encoding='utf-8', delete=False) as f:
-        f.write(text_content)
-        temp_path = f.name
 
-    result = parse_chat_file(temp_path)
-    result["chatName"] = chat_name
-    os.unlink(temp_path)
+def parse_chat_file(filepath: str) -> dict:
+    """
+    Parse WhatsApp exported TXT file from disk.
+
+    Returns:
+        chatName, chatType, participants, totalMessages, messages
+    """
+    with open(filepath, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    result = _parse_lines(lines)
+    result["chatName"] = _chat_name_from_filename(filepath)
     return result
 
 
-# ─────────────────────────────────────────────────────────
-# TEST — run this file directly to verify it works
-# python backend/services/whatsapp_parser.py
-# ─────────────────────────────────────────────────────────
+def parse_chat_from_text(text_content: str, chat_name: str = "Uploaded Chat") -> dict:
+    """Parse WhatsApp chat directly from raw export text (no temp file)."""
+    lines = text_content.splitlines()
+    result = _parse_lines(lines)
+    result["chatName"] = chat_name
+    return result
+
+
+# ------------------------------------------------------------------
+# Local test
+# ------------------------------------------------------------------
 if __name__ == "__main__":
+
     import sys
 
-    test_file = sys.argv[1] if len(sys.argv) > 1 else None
-
-    if not test_file:
-        print("Usage: python whatsapp_parser.py path/to/chat.txt")
+    if len(sys.argv) < 2:
+        print("Usage:")
+        print("python whatsapp_parser.py path/to/chat.txt")
         sys.exit(1)
 
-    result = parse_chat_file(test_file)
+    result = parse_chat_file(sys.argv[1])
 
     print(f"\n✅ Parsed: {result['chatName']}")
-    print(f"   Type        : {result['chatType']}")
-    print(f"   Participants: {result['participants']}")
-    print(f"   Messages    : {result['totalMessages']}")
-    print(f"\n--- First 3 messages ---")
-    for msg in result['messages'][:3]:
-        print(f"  [{msg['rawTimestamp']}] {msg['sender']}: {msg['content'][:60]}")
+    print(f"Type        : {result['chatType']}")
+    print(f"Participants: {result['participants']}")
+    print(f"Messages    : {result['totalMessages']}")
+
+    print("\n--- First 5 Messages ---")
+
+    for msg in result["messages"][:5]:
+        print(
+            f"[{msg['rawTimestamp']}] "
+            f"{msg['sender']}: "
+            f"{msg['content'][:80]}"
+        )
+

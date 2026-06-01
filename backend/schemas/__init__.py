@@ -1,0 +1,1 @@
+# ConvoInsight API schemas
