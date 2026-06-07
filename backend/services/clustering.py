@@ -3,8 +3,6 @@ Message Clustering Service - ConvoInsight
 """
 
 from datetime import datetime
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
 
 class ClusteringService:
@@ -19,11 +17,25 @@ class ClusteringService:
         if not text1.strip() or not text2.strip():
             return 0.0
 
+        if text1.strip().lower() == text2.strip().lower():
+            return 1.0
+
         try:
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.metrics.pairwise import cosine_similarity
+
             vectorizer = TfidfVectorizer()
             tfidf_matrix = vectorizer.fit_transform([text1, text2])
             score = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])
             return float(score[0][0])
+        except ImportError:
+            tokens1 = set(text1.lower().split())
+            tokens2 = set(text2.lower().split())
+            if not tokens1 or not tokens2:
+                return 0.0
+            overlap = tokens1.intersection(tokens2)
+            union = tokens1.union(tokens2)
+            return float(len(overlap) / len(union)) if union else 0.0
         except Exception:
             return 0.0
 

@@ -14,6 +14,7 @@ import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
+import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -156,7 +157,7 @@ export default function ChatsScreen() {
     <ThemedView style={styles.container}>
 
       {/* ── Search + Filter Header ── */}
-      <View
+      <Card
         style={[
           styles.searchContainer,
           {
@@ -245,13 +246,7 @@ export default function ChatsScreen() {
             {filteredChats.length} {filteredChats.length === 1 ? "chat" : "chats"}
           </ThemedText>
         ) : null}
-      </View>
-
-      {/* ── Chat List ── */}
-      <FlatList
-        data={filteredChats}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
+      </Card>
           <ChatListItem
             chat={item}
             onPress={() => navigation.navigate("Dashboard", { chatId: item.id })}

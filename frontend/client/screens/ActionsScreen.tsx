@@ -10,6 +10,7 @@ import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
+import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { useActions } from "@/hooks/useActions";
@@ -158,7 +159,7 @@ export default function ActionsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <View
+      <Card
         style={[
           styles.segmentContainer,
           {
@@ -196,7 +197,7 @@ export default function ActionsScreen() {
             </Pressable>
           ))}
         </View>
-      </View>
+      </Card>
       <FlatList
         data={filteredActions}
         keyExtractor={(item) => item.id}

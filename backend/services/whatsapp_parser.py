@@ -21,12 +21,13 @@ logger = logging.getLogger(__name__)
 # WhatsApp message line
 # Example:
 # 13/05/2026, 4:22 pm - Ali: Hello
-# 13/05/2026, 4:22 pm - Ali: Hello
+# [13/05/2026, 4:22:15 PM] Ali: Hello
+# 5/28/24, 2:14 PM - User1: Hello
 # ------------------------------------------------------------------
 MESSAGE_PATTERN = re.compile(
-    r'^(\d{2}/\d{2}/\d{4}),\s*'
-    r'(\d{1,2}:\d{2}[\s\u202F\u00A0]*(?:am|pm|AM|PM))'
-    r'\s-\s(.+?):\s(.+)$'
+    r'^\[?(\d{1,2}/\d{1,2}/\d{2,4}),\s*'
+    r'(\d{1,2}:\d{2}(?::\d{2})?[\s\u202F\u00A0]*(?:am|pm|AM|PM)?)\]?'
+    r'\s*(?:-\s*|:\s+)(.+?):\s(.+)$'
 )
 
 # ------------------------------------------------------------------
@@ -35,20 +36,16 @@ MESSAGE_PATTERN = re.compile(
 # 13/05/2026, 4:22 pm - Ali created group
 # ------------------------------------------------------------------
 SYSTEM_PATTERN = re.compile(
-    r'^(\d{2}/\d{2}/\d{4}),\s*'
-    r'(\d{1,2}:\d{2}[\s\u202F\u00A0]*(?:am|pm|AM|PM))'
-    r'\s-\s(.+)$'
+    r'^\[?(\d{1,2}/\d{1,2}/\d{2,4}),\s*'
+    r'(\d{1,2}:\d{2}(?::\d{2})?[\s\u202F\u00A0]*(?:am|pm|AM|PM)?)\]?'
+    r'\s*(?:-\s*|:\s+)(.+)$'
 )
 
 
 def parse_timestamp(date_str, time_str):
     """
     Convert WhatsApp timestamp into datetime object.
-
-    Supports:
-    13/05/2026, 4:22 pm
-    13/05/2026, 4:22 PM
-    13/05/2026, 4:22 pm
+    Supports a wide variety of date and time formats.
     """
 
     try:
@@ -57,13 +54,47 @@ def parse_timestamp(date_str, time_str):
             .replace("\u202F", " ")
             .replace("\u00A0", " ")
             .strip()
-            .upper()
         )
 
-        return datetime.strptime(
-            f"{date_str} {clean_time}",
-            "%d/%m/%Y %I:%M %p"
-        )
+        # Try parsing time formats
+        time_formats = ["%I:%M %p", "%I:%M:%S %p", "%H:%M", "%H:%M:%S"]
+        parsed_time = None
+        for tf in time_formats:
+            try:
+                parsed_time = datetime.strptime(clean_time, tf).time()
+                break
+            except ValueError:
+                continue
+
+        if parsed_time is None:
+            # Check case-insensitive AM/PM
+            for tf in time_formats:
+                try:
+                    parsed_time = datetime.strptime(clean_time.upper(), tf).time()
+                    break
+                except ValueError:
+                    continue
+
+        if parsed_time is None:
+            return None
+
+        # Try parsing date formats
+        date_formats = [
+            "%d/%m/%Y", "%m/%d/%Y", "%d/%m/%y", "%m/%d/%y",
+            "%Y-%m-%d", "%y-%m-%d"
+        ]
+        parsed_date = None
+        for df in date_formats:
+            try:
+                parsed_date = datetime.strptime(date_str, df).date()
+                break
+            except ValueError:
+                continue
+
+        if parsed_date is None:
+            return None
+
+        return datetime.combine(parsed_date, parsed_time)
 
     except Exception:
         return None

@@ -12,6 +12,7 @@ import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollV
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Button } from "@/components/Button";
+import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -148,41 +149,40 @@ export default function ImportChatScreen() {
     <ThemedView style={styles.container}>
       <View
         style={[
-          styles.waHeader,
+          styles.banner,
           {
-            paddingTop: insets.top + Spacing.sm,
+            paddingTop: insets.top + Spacing.lg,
             backgroundColor: theme.primaryVariant,
           },
         ]}
       >
         <Feather name="message-circle" size={28} color="#FFFFFF" />
-        <View style={styles.waHeaderText}>
-          <ThemedText type="h4" style={{ color: "#FFFFFF" }}>
-            Import WhatsApp Chat
+        <View style={styles.bannerText}>
+          <ThemedText type="h3" style={styles.bannerTitle}>
+            Import WhatsApp chat
           </ThemedText>
-          <ThemedText type="caption" style={{ color: "#FFFFFFCC" }}>
-            Export .txt → instant AI insights
+          <ThemedText type="body" style={styles.bannerSubtitle}>
+            Convert chat exports into action items, priorities, and team-ready insights.
           </ThemedText>
         </View>
       </View>
 
       <KeyboardAwareScrollViewCompat
         style={{ flex: 1 }}
-        contentContainerStyle={{
-          paddingTop: Spacing.lg,
-          paddingBottom: insets.bottom + Spacing.xl,
-          paddingHorizontal: Spacing.lg,
-        }}
+        contentContainerStyle={styles.scrollContent}
       >
-        <View style={styles.section}>
+        <Card style={styles.card}>
           <ThemedText type="h4" style={styles.sectionTitle}>
-            Your name in chat
+            Your chat identity
+          </ThemedText>
+          <ThemedText type="caption" style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>            
+            Enter the name shown in your WhatsApp export so insights map correctly to your messages.
           </ThemedText>
           <TextInput
             style={[
               styles.nameInput,
               {
-                backgroundColor: theme.backgroundDefault,
+                backgroundColor: theme.backgroundRoot,
                 color: theme.text,
                 borderColor: theme.border,
               },
@@ -194,11 +194,14 @@ export default function ImportChatScreen() {
             autoCapitalize="words"
             editable={!isPreparing}
           />
-        </View>
+        </Card>
 
-        <View style={styles.section}>
+        <Card style={styles.card}>
           <ThemedText type="h4" style={styles.sectionTitle}>
-            Chat export
+            Upload export
+          </ThemedText>
+          <ThemedText type="caption" style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>            
+            Choose a WhatsApp chat export (.txt) without media to start analysis.
           </ThemedText>
           {chatFile ? (
             <View
@@ -223,7 +226,7 @@ export default function ImportChatScreen() {
                 styles.dropZone,
                 {
                   borderColor: theme.primary,
-                  backgroundColor: theme.backgroundDefault,
+                  backgroundColor: theme.backgroundRoot,
                 },
               ]}
               onPress={pickChatFile}
@@ -238,7 +241,7 @@ export default function ImportChatScreen() {
                 <Feather name="upload-cloud" size={32} color={theme.primary} />
               </View>
               <ThemedText type="body" style={{ fontWeight: "600" }}>
-                Tap to select .txt file
+                Select your chat export
               </ThemedText>
               <ThemedText
                 type="caption"
@@ -248,9 +251,9 @@ export default function ImportChatScreen() {
               </ThemedText>
             </Pressable>
           )}
-        </View>
+        </Card>
 
-        <View style={styles.section}>
+        <Card style={styles.card}>
           <View style={styles.sectionHeaderRow}>
             <ThemedText type="h4">Voice notes</ThemedText>
             <ThemedText type="caption" style={{ color: theme.textSecondary }}>
@@ -262,7 +265,7 @@ export default function ImportChatScreen() {
               key={`${note.name}-${index}`}
               style={[
                 styles.fileChip,
-                { backgroundColor: theme.backgroundDefault },
+                { backgroundColor: theme.backgroundRoot },
               ]}
             >
               <Feather name="mic" size={18} color={theme.primary} />
@@ -286,12 +289,12 @@ export default function ImportChatScreen() {
               Add voice note
             </ThemedText>
           </Pressable>
-        </View>
+        </Card>
 
         <Button
           onPress={startProcessing}
           disabled={!chatFile || isPreparing}
-          style={{ backgroundColor: theme.primary, marginTop: Spacing.md }}
+          style={styles.submitButton}
         >
           {isPreparing ? "Preparing…" : "Continue to analysis"}
         </Button>
@@ -304,21 +307,38 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  waHeader: {
+  banner: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.md,
+    paddingBottom: Spacing.xl,
   },
-  waHeaderText: {
+  bannerText: {
     flex: 1,
   },
-  section: {
-    marginBottom: Spacing.xl,
+  bannerTitle: {
+    color: "#FFFFFF",
+    textTransform: "uppercase",
+  },
+  bannerSubtitle: {
+    color: "#FFFFFFCC",
+    marginTop: Spacing.xs,
+    lineHeight: 22,
+  },
+  scrollContent: {
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.xl,
+    paddingHorizontal: Spacing.lg,
+  },
+  card: {
+    marginBottom: Spacing.lg,
   },
   sectionTitle: {
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  sectionSubtitle: {
+    marginBottom: Spacing.lg,
   },
   sectionHeaderRow: {
     flexDirection: "row",
@@ -364,8 +384,7 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderRadius: BorderRadius.sm,
   },
-  loadingButton: {
-    flexDirection: "row",
-    alignItems: "center",
+  submitButton: {
+    marginTop: Spacing.sm,
   },
 });

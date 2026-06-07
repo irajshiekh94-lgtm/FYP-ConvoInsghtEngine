@@ -4,24 +4,38 @@ Rule-based + optional FLAN-T5 ML polish for WhatsApp / STT text.
 """
 
 import re
-import sqlite3
 from datetime import datetime
 from typing import Dict, List, Optional
 
-import torch
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-from word2number import w2n
+try:
+    import torch
+    from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None  # type: ignore
+    AutoTokenizer = None  # type: ignore
+    AutoModelForSeq2SeqLM = None  # type: ignore
+    TORCH_AVAILABLE = False
+
+try:
+    from word2number import w2n
+    WORD2NUMBER_AVAILABLE = True
+except ImportError:
+    w2n = None  # type: ignore
+    WORD2NUMBER_AVAILABLE = False
 
 
 # ── ML model (singleton) ──────────────────────────────────────────────────────
 MODEL_NAME = "google/flan-t5-base"
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda" if TORCH_AVAILABLE and torch.cuda.is_available() else "cpu"
 _tokenizer = None
 _model = None
 
 
 def _load_model():
     global _tokenizer, _model
+    if not TORCH_AVAILABLE or AutoTokenizer is None or AutoModelForSeq2SeqLM is None:
+        raise EnvironmentError("Optional ML dependencies are not installed.")
     if _tokenizer is None:
         print("[Normaliser] Loading FLAN-T5...")
         _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
@@ -29,48 +43,6 @@ def _load_model():
         _model.eval()
         print("[Normaliser] FLAN-T5 ready.")
     return _tokenizer, _model
-
-
-# ── SQLite memory cache ───────────────────────────────────────────────────────
-DB_PATH = "memory.db"
-_conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-_cur = _conn.cursor()
-_cur.execute("""
-CREATE TABLE IF NOT EXISTS memory (
-    raw        TEXT PRIMARY KEY,
-    normalized TEXT,
-    usage_count INTEGER DEFAULT 1,
-    last_used   TIMESTAMP,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-""")
-_conn.commit()
-
-
-def remember(raw: str, normalized: str) -> None:
-    """Persist a normalisation result (upsert with usage counter)."""
-    try:
-        _cur.execute("""
-            INSERT INTO memory (raw, normalized, last_used)
-            VALUES (?, ?, ?)
-            ON CONFLICT(raw) DO UPDATE SET
-                normalized  = excluded.normalized,
-                usage_count = usage_count + 1,
-                last_used   = excluded.last_used
-        """, (raw.strip(), normalized.strip(), datetime.now()))
-        _conn.commit()
-    except Exception as exc:
-        print(f"[Normaliser] Memory write error: {exc}")
-
-
-def recall(text: str) -> Optional[str]:
-    """Return cached normalisation or None."""
-    try:
-        _cur.execute("SELECT normalized FROM memory WHERE raw = ?", (text.strip(),))
-        row = _cur.fetchone()
-        return row[0] if row else None
-    except Exception:
-        return None
 
 
 # ── Lookup tables ─────────────────────────────────────────────────────────────
@@ -191,10 +163,12 @@ def normalize_numbers(text: str) -> str:
     )
 
     def _repl(m):
-        try:
-            return str(w2n.word_to_num(m.group().strip()))
-        except Exception:
-            return m.group()
+        if WORD2NUMBER_AVAILABLE:
+            try:
+                return str(w2n.word_to_num(m.group().strip()))
+            except Exception:
+                return m.group()
+        return m.group()
 
     return re.sub(pattern, _repl, text, flags=re.IGNORECASE)
 
@@ -346,13 +320,15 @@ def rule_normalize(text: str) -> str:
 
 # ── ML polish (optional) ──────────────────────────────────────────────────────
 
-@torch.inference_mode()
 def ml_polish(text: str) -> str:
     """
     Run FLAN-T5 grammar correction over the rule-normalised text.
     Processes in chunks to avoid truncation on long inputs.
     Falls back to the original chunk if output is suspiciously short.
     """
+    if not TORCH_AVAILABLE or AutoTokenizer is None or AutoModelForSeq2SeqLM is None:
+        raise EnvironmentError("Optional ML dependencies are not installed.")
+
     tokenizer, model = _load_model()
     sentences = smart_sentence_split(text)
 
@@ -446,16 +422,6 @@ def full_normalize(text: str, use_ml: Optional[bool] = None) -> Dict:
     if not text or not text.strip():
         return {"normalized_text": "", "source": "empty", "validation": False, "word_count": 0}
 
-    # Check cache first
-    cached = recall(text)
-    if cached:
-        return {
-            "normalized_text": cached,
-            "source": "cache",
-            "validation": True,
-            "word_count": len(cached.split()),
-        }
-
     # Auto-decide ML usage
     if use_ml is None:
         word_count = len(text.split())
@@ -485,9 +451,6 @@ def full_normalize(text: str, use_ml: Optional[bool] = None) -> Dict:
         final_out = rule_out
         is_valid = validate_output(rule_out, text)
         source = "rules only (validation fallback)"
-
-    if is_valid:
-        remember(text, final_out)
 
     return {
         "normalized_text": final_out,

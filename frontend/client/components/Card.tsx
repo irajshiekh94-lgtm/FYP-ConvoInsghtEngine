@@ -1,11 +1,5 @@
 import React from "react";
-import { StyleSheet, Pressable, ViewStyle } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  WithSpringConfig,
-} from "react-native-reanimated";
+import { StyleSheet, Pressable, ViewStyle, StyleProp } from "react-native";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
@@ -17,33 +11,19 @@ interface CardProps {
   description?: string;
   children?: React.ReactNode;
   onPress?: () => void;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 }
 
-const springConfig: WithSpringConfig = {
-  damping: 15,
-  mass: 0.3,
-  stiffness: 150,
-  overshootClamping: true,
-};
-
-const getBackgroundColorForElevation = (
-  elevation: number,
-  theme: any,
-): string => {
+const getBackgroundColorForElevation = (elevation: number, theme: any): string => {
   switch (elevation) {
     case 1:
       return theme.backgroundDefault;
     case 2:
       return theme.backgroundSecondary;
-    case 3:
-      return theme.backgroundTertiary;
     default:
       return theme.backgroundRoot;
   }
 };
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export function Card({
   elevation = 1,
@@ -54,33 +34,15 @@ export function Card({
   style,
 }: CardProps) {
   const { theme } = useTheme();
-  const scale = useSharedValue(1);
-
-  const cardBackgroundColor = getBackgroundColorForElevation(elevation, theme);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    scale.value = withSpring(0.98, springConfig);
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1, springConfig);
-  };
+  const backgroundColor = getBackgroundColorForElevation(elevation, theme);
 
   return (
-    <AnimatedPressable
+    <Pressable
       onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={[
+      android_ripple={{ color: theme.backgroundSecondary }}
+      style={({ pressed }) => [
         styles.card,
-        {
-          backgroundColor: cardBackgroundColor,
-        },
-        animatedStyle,
+        { backgroundColor, opacity: pressed ? 0.95 : 1 },
         style,
       ]}
     >
@@ -95,7 +57,7 @@ export function Card({
         </ThemedText>
       ) : null}
       {children}
-    </AnimatedPressable>
+    </Pressable>
   );
 }
 
@@ -103,11 +65,17 @@ const styles = StyleSheet.create({
   card: {
     padding: Spacing.xl,
     borderRadius: BorderRadius["2xl"],
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
   },
   cardTitle: {
     marginBottom: Spacing.sm,
   },
   cardDescription: {
-    opacity: 0.7,
+    opacity: 0.75,
+    marginBottom: Spacing.md,
   },
 });

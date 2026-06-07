@@ -16,24 +16,72 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
 
-from backend.routes.analysis import router as analysis_router
-from backend.routes.auth import router as auth_router
 from backend.schemas.analysis import (
     ChatUploadRequest,
     ParsedMessageItem,
     ProcessingStatus,
     SummaryItem,
 )
-from backend.services.cluster_bridge import shape_clusters
-from backend.services.clustering import ClusteringService
-from backend.services.intentpipeline import classify_all
-from backend.services.pipeline import (
-    flatten_summaries_for_legacy,
-    run_analysis_pipeline,
-)
-from backend.services.stt_integration import process_audio_file, load_whisper_model
-from backend.services.summarization import SummarizationService
-from backend.services.text_normalizer import full_normalize
+
+# Routers may import heavy ML/audio services; import them defensively so the
+# server can start even if optional dependencies are missing.
+analysis_router = None
+auth_router = None
+try:
+    from backend.routes.auth import router as auth_router
+except Exception as e:
+    logging.getLogger(__name__).warning(f"Auth routes unavailable: {e}")
+
+try:
+    from backend.routes.analysis import router as analysis_router
+except Exception as e:
+    logging.getLogger(__name__).warning(f"Analysis routes unavailable: {e}")
+
+# Optional ML/audio services — import if available, otherwise continue.
+shape_clusters = None
+ClusteringService = None
+classify_all = None
+flatten_summaries_for_legacy = None
+run_analysis_pipeline = None
+process_audio_file = None
+load_whisper_model = None
+SummarizationService = None
+full_normalize = None
+try:
+    from backend.services.cluster_bridge import shape_clusters
+except Exception as e:
+    logging.getLogger(__name__).warning(f"Cluster bridge unavailable: {e}")
+
+try:
+    from backend.services.clustering import ClusteringService
+except Exception as e:
+    logging.getLogger(__name__).warning(f"Clustering service unavailable: {e}")
+
+try:
+    from backend.services.intentpipeline import classify_all
+except Exception as e:
+    logging.getLogger(__name__).warning(f"Intent pipeline unavailable: {e}")
+
+try:
+    from backend.services.pipeline import flatten_summaries_for_legacy, run_analysis_pipeline
+except Exception as e:
+    logging.getLogger(__name__).warning(f"Analysis pipeline unavailable: {e}")
+
+try:
+    from backend.services.stt_integration import process_audio_file, load_whisper_model
+except Exception as e:
+    logging.getLogger(__name__).warning(f"STT integration unavailable: {e}")
+
+try:
+    from backend.services.summarization import SummarizationService
+except Exception as e:
+    logging.getLogger(__name__).warning(f"Summarization service unavailable: {e}")
+
+try:
+    from backend.services.text_normalizer import full_normalize
+except Exception as e:
+    logging.getLogger(__name__).warning(f"Text normalizer unavailable: {e}")
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -75,12 +123,30 @@ app.add_middleware(
 )
 
 # ── Routers ────────────────────────────────────────────────────────────────────
-app.include_router(analysis_router)
-app.include_router(auth_router)
+if analysis_router is not None:
+    app.include_router(analysis_router)
+else:
+    logger.warning("Analysis router not included (missing optional deps)")
+
+if auth_router is not None:
+    app.include_router(auth_router)
+else:
+    logger.warning("Auth router not included (auth routes unavailable)")
 
 # ── Service Singletons (audio / legacy paths) ──────────────────────────────────
-clustering_service = ClusteringService()
-summarization_service = SummarizationService()
+clustering_service = None
+summarization_service = None
+if ClusteringService:
+    try:
+        clustering_service = ClusteringService()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Clustering service initialization failed: {e}")
+
+if SummarizationService:
+    try:
+        summarization_service = SummarizationService()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Summarization service initialization failed: {e}")
 
 # ── Pydantic Models ────────────────────────────────────────────────────────────
 
@@ -119,12 +185,24 @@ async def startup_event():
     logger.info("=" * 80)
     logger.info("🚀 ConvoInsight API Starting...")
     logger.info("=" * 80)
-    try:
-        load_whisper_model()
-        logger.info("✓ Whisper model loaded successfully")
-    except Exception as e:
-        logger.warning(f"⚠ Warning: Could not pre-load Whisper model: {e}")
-        logger.warning("  Audio transcription will load model on first request")
+    # Allow disabling Whisper pre-load to reduce memory usage on small/dev machines
+    preload_env = os.getenv("PRELOAD_WHISPER", "1").lower()
+    preload_whisper = preload_env not in ("0", "false", "no")
+
+    if not preload_whisper:
+        logger.info("⚠ Whisper pre-load disabled via PRELOAD_WHISPER env var")
+    elif callable(load_whisper_model):
+        try:
+            load_whisper_model()
+            logger.info("✓ Whisper model loaded successfully")
+        except MemoryError as me:
+            logger.warning(f"⚠ MemoryError while loading Whisper: {me}")
+            logger.warning("  Skipping pre-load; audio transcription will load model on first request")
+        except Exception as e:
+            logger.warning(f"⚠ Warning: Could not pre-load Whisper model: {e}")
+            logger.warning("  Audio transcription will load model on first request")
+    else:
+        logger.warning("⚠ Whisper model loader unavailable — audio transcription paths are disabled.")
 
 # ── Helper Functions ───────────────────────────────────────────────────────────
 
@@ -190,6 +268,13 @@ async def upload_chat_legacy(request_data: ChatUploadRequest):
     try:
         if not request_data.rawText.strip():
             return LegacyChatUploadResponse(success=False, status="failed", error="rawText is empty")
+
+        if run_analysis_pipeline is None or flatten_summaries_for_legacy is None:
+            return LegacyChatUploadResponse(
+                success=False,
+                status="failed",
+                error="Analysis pipeline unavailable."
+            )
 
         logger.info("Analyzing chat (legacy): %s", request_data.chatName)
 
@@ -278,6 +363,9 @@ async def upload_audio(
             content = await audio.read()
             tmp.write(content)
             temp_path = tmp.name
+
+        if process_audio_file is None or clustering_service is None or shape_clusters is None or summarization_service is None or classify_all is None:
+            raise HTTPException(status_code=503, detail="Audio analysis is unavailable due to missing dependencies.")
 
         # Transcribe and normalize
         stt_result = process_audio_file(temp_path, normalize=True, use_ml=False)
@@ -370,6 +458,8 @@ async def normalize_text(request: TextNormalizeRequest):
             raise HTTPException(status_code=400, detail="Text is empty")
 
         logger.info(f"📝 Normalizing text (use_ml={request.use_ml})")
+        if full_normalize is None:
+            raise HTTPException(status_code=503, detail="Text normalization is unavailable due to missing dependencies.")
         result = full_normalize(request.text, use_ml=request.use_ml)
 
         return TextNormalizeResponse(
@@ -457,6 +547,9 @@ async def transcribe_audio_file(
             tmp_file.write(content)
             temp_path = tmp_file.name
             logger.info(f"  ✓ Saved to temp: {temp_path}")
+
+        if process_audio_file is None:
+            raise HTTPException(status_code=503, detail="Audio transcription is unavailable due to missing dependencies.")
 
         logger.info("  ⏳ Starting audio processing...")
         result = process_audio_file(

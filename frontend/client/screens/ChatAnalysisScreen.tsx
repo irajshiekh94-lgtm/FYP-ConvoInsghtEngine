@@ -13,6 +13,7 @@ import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
+import { Card } from "@/components/Card";
 import { CategoryBadge } from "@/components/CategoryBadge";
 import { PriorityDashboardCards } from "@/components/PriorityDashboardCards";
 import {
@@ -312,12 +313,7 @@ export default function ChatAnalysisScreen() {
         <PriorityDashboardCards priorities={priorities as PrioritiesBucket} />
 
         {chat.summary ? (
-          <View
-            style={[
-              styles.summaryCard,
-              { backgroundColor: theme.backgroundDefault },
-            ]}
-          >
+          <Card style={styles.summaryCard}>
             <View style={styles.summaryHeader}>
               <Feather name="zap" size={20} color={theme.primary} />
               <ThemedText type="h4">Overview</ThemedText>
@@ -325,37 +321,27 @@ export default function ChatAnalysisScreen() {
             <ThemedText type="body" style={{ color: theme.textSecondary }}>
               {chat.summary}
             </ThemedText>
-          </View>
+          </Card>
         ) : null}
 
         {themes.length > 0 ? (
-          <View
-            style={[
-              styles.summaryCard,
-              { backgroundColor: theme.backgroundDefault },
-            ]}
-          >
+          <Card style={styles.summaryCard}>
             <View style={styles.summaryHeader}>
               <Feather name="layers" size={20} color={theme.primary} />
               <ThemedText type="h4">Conversation themes</ThemedText>
             </View>
             <BulletList items={themes} />
-          </View>
+          </Card>
         ) : null}
 
         {keyDecisions.length > 0 ? (
-          <View
-            style={[
-              styles.summaryCard,
-              { backgroundColor: theme.backgroundDefault },
-            ]}
-          >
+          <Card style={styles.summaryCard}>
             <View style={styles.summaryHeader}>
               <Feather name="check-circle" size={20} color={theme.categoryActionable} />
               <ThemedText type="h4">Key decisions</ThemedText>
             </View>
             <BulletList items={keyDecisions} />
-          </View>
+          </Card>
         ) : null}
 
         <PrioritySection

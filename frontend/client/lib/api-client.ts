@@ -43,7 +43,7 @@ export interface PriorityItem {
   message_count?: number;
 }
 
-export type { AnalysisResult, JobResultResponse, JobUploadResponse } from "./analysis-schema";
+export type { AnalysisResult, JobResultResponse, JobStatusResponse, JobUploadResponse } from "./analysis-schema";
 export type AnalysisPayload = AnalysisResult;
 
 /**
@@ -93,7 +93,7 @@ export async function transcribeAudio(
     formData.append('language', language);
   }
 
-  const res = await fetch(`${baseUrl}/transcribe/audio`, {
+  const res = await fetch(new URL("/transcribe/audio", baseUrl).href, {
     method: 'POST',
     body: formData,
     credentials: 'include',
@@ -119,7 +119,7 @@ export async function normalizeTextFile(
   const formData = new FormData();
   formData.append('file', file);
 
-  const res = await fetch(`${baseUrl}/normalize/text-file`, {
+  const res = await fetch(new URL("/normalize/text-file", baseUrl).href, {
     method: 'POST',
     body: formData,
     credentials: 'include',
@@ -147,11 +147,12 @@ export async function uploadChat(payload: {
       currentUser: payload.currentUser ?? "Me",
       chatName: payload.chatName,
     }),
+    credentials: "include",
   });
-  const data = await res.json();
   if (!res.ok) {
     await handleApiError(res);
   }
+  const data = await res.json();
   return data;
 }
 
@@ -162,11 +163,12 @@ export async function processChat(jobId: string): Promise<JobResultResponse> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jobId }),
+    credentials: "include",
   });
-  const data: JobResultResponse = await res.json();
   if (!res.ok) {
     await handleApiError(res);
   }
+  const data: JobResultResponse = await res.json();
   if (data.status === "failed") {
     throw new Error(data.error || "Analysis failed");
   }
@@ -176,11 +178,13 @@ export async function processChat(jobId: string): Promise<JobResultResponse> {
 /** Step 3 — poll job status and canonical result. */
 export async function getChatResults(jobId: string): Promise<JobResultResponse> {
   const baseUrl = getApiUrl();
-  const res = await fetch(new URL(`/api/get-results/${jobId}`, baseUrl).href);
-  const data: JobResultResponse = await res.json();
+  const res = await fetch(new URL(`/api/get-results/${jobId}`, baseUrl).href, {
+    credentials: "include",
+  });
   if (!res.ok) {
     await handleApiError(res);
   }
+  const data: JobResultResponse = await res.json();
   return data;
 }
 
@@ -211,13 +215,14 @@ export async function uploadChatAnalysis(payload: {
       currentUser: payload.currentUser ?? "Me",
       chatName: payload.chatName,
     }),
+    credentials: "include",
   });
 
-  const data: BackendUploadResponse = await res.json();
-
   if (!res.ok) {
-    throw new Error(data.error || `Upload failed (${res.status})`);
+    await handleApiError(res);
   }
+
+  const data: BackendUploadResponse = await res.json();
 
   if (!data.success) {
     throw new Error(data.error || "Analysis failed");
@@ -264,7 +269,7 @@ export async function getHealth(): Promise<any> {
   const baseUrl = getApiUrl();
   
   try {
-    const res = await fetch(`${baseUrl}/health`, {
+    const res = await fetch(new URL("/health", baseUrl).href, {
       credentials: 'include',
     });
     

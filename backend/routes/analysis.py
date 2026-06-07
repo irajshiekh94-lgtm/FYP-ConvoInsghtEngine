@@ -19,10 +19,16 @@ from backend.schemas.analysis import (
     UploadChatRequest,
 )
 from backend.services.job_store import job_store
-from backend.services.pipeline import (
-    flatten_summaries_for_legacy,
-    run_analysis_pipeline,
-)
+
+
+def _get_pipeline_helpers():
+    try:
+        from backend.services.pipeline import flatten_summaries_for_legacy, run_analysis_pipeline
+    except Exception as exc:
+        logger.error("Analysis pipeline unavailable: %s", exc)
+        raise HTTPException(status_code=503, detail="Analysis pipeline unavailable")
+
+    return flatten_summaries_for_legacy, run_analysis_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +84,7 @@ async def process_chat(body: ProcessChatRequest):
     job_store.set_status(body.jobId, ProcessingStatus.PROCESSING)
 
     try:
+        _, run_analysis_pipeline = _get_pipeline_helpers()
         result, meta = run_analysis_pipeline(
             raw_text=job["rawText"],
             chat_name=job["chatName"],
@@ -121,6 +128,8 @@ def _build_result_response(job: dict) -> JobResultResponse:
 
     if isinstance(result, dict):
         result = AnalysisResult(**result)
+
+    flatten_summaries_for_legacy, _ = _get_pipeline_helpers()
 
     return JobResultResponse(
         id=job["id"],

@@ -4,7 +4,13 @@ Classifies a cluster summary into one of the defined intent labels using Gemini.
 """
 
 import os
-import google.generativeai as genai
+
+try:
+    import google.generativeai as genai
+    GENAI_AVAILABLE = True
+except ImportError:
+    genai = None  # type: ignore
+    GENAI_AVAILABLE = False
 
 
 INTENT_LABELS = [
@@ -22,6 +28,8 @@ _model = None
 def _get_model():
     global _model
     if _model is None:
+        if not GENAI_AVAILABLE:
+            raise EnvironmentError("google.generativeai is not installed.")
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise EnvironmentError("GEMINI_API_KEY environment variable is not set.")
@@ -62,7 +70,7 @@ def classify_intent(summary_text: str) -> str:
     if any(w in lower for w in ["hello", "hi ", "hey ", "good morning", "good evening", "how are you"]):
         return "greeting"
 
-    if not os.getenv("GEMINI_API_KEY"):
+    if not os.getenv("GEMINI_API_KEY") or not GENAI_AVAILABLE:
         return _rule_based_intent(summary_text)
 
     labels_str = ", ".join(INTENT_LABELS)

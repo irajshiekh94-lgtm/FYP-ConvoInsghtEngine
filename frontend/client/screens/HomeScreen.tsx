@@ -6,6 +6,7 @@ import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
+import { Card } from "@/components/Card";
 import { SectionHeader } from "@/components/SectionHeader";
 import { useTheme } from "@/hooks/useTheme";
 import { useTabScreenInsets } from "@/hooks/useTabScreenInsets";
@@ -185,8 +186,10 @@ export default function HomeScreen() {
           />
         </View>
 
-        <SectionHeader title="Priority overview" />
-        <PriorityDashboardCards counts={priorityTotals} />
+        <Card style={styles.overviewCard}>
+          <SectionHeader title="Priority overview" />
+          <PriorityDashboardCards counts={priorityTotals} />
+        </Card>
 
         {recentChats.length > 0 ? (
           <View style={styles.section}>
@@ -195,17 +198,19 @@ export default function HomeScreen() {
               actionLabel="See all"
               onAction={() => navigation.getParent()?.navigate("ChatsTab")}
             />
-            <View style={styles.list}>
-              {recentChats.map((chat) => (
-                <RecentChatItem
-                  key={chat.id}
-                  chat={chat}
-                  onPress={() =>
-                    navigation.navigate("Dashboard", { chatId: chat.id })
-                  }
-                />
-              ))}
-            </View>
+            <Card style={styles.recentCard}>
+              <View style={styles.list}>
+                {recentChats.map((chat) => (
+                  <RecentChatItem
+                    key={chat.id}
+                    chat={chat}
+                    onPress={() =>
+                      navigation.navigate("Dashboard", { chatId: chat.id })
+                    }
+                  />
+                ))}
+              </View>
+            </Card>
           </View>
         ) : null}
       </ScrollView>
@@ -237,6 +242,12 @@ const styles = StyleSheet.create({
   },
   statValue: { marginBottom: 2 },
   section: { marginBottom: Spacing.lg },
+  overviewCard: {
+    marginBottom: Spacing.lg,
+  },
+  recentCard: {
+    padding: Spacing.md,
+  },
   list: { gap: Spacing.sm },
   recentItem: {
     flexDirection: "row",

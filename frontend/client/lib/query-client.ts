@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import Constants from "expo-constants";
 
 /**
  * Base URL for the ConvoInsight Python API (FastAPI on port 8000 by default).
@@ -9,33 +10,55 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
  * Falls back to EXPO_PUBLIC_DOMAIN (host[:port] only) with http for local hosts.
  */
 export function getApiUrl(): string {
-  const explicit = process.env.EXPO_PUBLIC_API_URL?.trim();
-  if (explicit) {
-    return explicit.endsWith("/") ? explicit : `${explicit}/`;
+  let urlStr = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (!urlStr) {
+    const host = process.env.EXPO_PUBLIC_DOMAIN?.trim();
+    if (host) {
+      urlStr = /^https?:\/\//i.test(host) ? host : `http://${host}`;
+    }
   }
 
-  const host = process.env.EXPO_PUBLIC_DOMAIN?.trim();
-  if (!host) {
-    throw new Error(
-      "Set EXPO_PUBLIC_API_URL (e.g. http://localhost:8000) or EXPO_PUBLIC_DOMAIN"
-    );
+  // If still not set, default to localhost
+  if (!urlStr) {
+    urlStr = "http://127.0.0.1:8000/";
   }
 
-  const withProtocol = /^https?:\/\//i.test(host) ? host : `http://${host}`;
-  const url = new URL(withProtocol);
-
-  // Replit / production hosts use HTTPS; local dev uses HTTP
-  const isLocal =
-    url.hostname === "localhost" ||
-    url.hostname === "127.0.0.1" ||
-    url.hostname.startsWith("192.168.") ||
-    url.hostname.startsWith("10.");
-
-  if (!/^https?:\/\//i.test(host) && !isLocal) {
-    url.protocol = "https:";
+  // Ensure it has protocol
+  if (!/^https?:\/\//i.test(urlStr)) {
+    urlStr = `http://${urlStr}`;
   }
 
-  return url.href.endsWith("/") ? url.href : `${url.href}/`;
+  // Ensure trailing slash
+  if (!urlStr.endsWith("/")) {
+    urlStr = `${urlStr}/`;
+  }
+
+  try {
+    const url = new URL(urlStr);
+
+    // Swap localhost/127.0.0.1 with the actual Metro bundler IP if running under Expo Go
+    if ((url.hostname === "localhost" || url.hostname === "127.0.0.1") && Constants.expoConfig?.hostUri) {
+      const metroHost = Constants.expoConfig.hostUri.split(":")[0];
+      if (metroHost && metroHost !== "localhost" && metroHost !== "127.0.0.1") {
+        url.hostname = metroHost;
+      }
+    }
+
+    // Replit / production hosts use HTTPS; local dev uses HTTP
+    const isLocal =
+      url.hostname === "localhost" ||
+      url.hostname === "127.0.0.1" ||
+      url.hostname.startsWith("192.168.") ||
+      url.hostname.startsWith("10.");
+
+    if (!isLocal && url.protocol === "http:") {
+      url.protocol = "https:";
+    }
+
+    return url.href;
+  } catch {
+    return urlStr;
+  }
 }
 
 async function throwIfResNotOk(res: Response) {

@@ -1,11 +1,5 @@
-import React, { ReactNode } from "react";
+import React from "react";
 import { StyleSheet, Pressable, ViewStyle, StyleProp } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  WithSpringConfig,
-} from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
@@ -13,19 +7,10 @@ import { BorderRadius, Spacing } from "@/constants/theme";
 
 interface ButtonProps {
   onPress?: () => void;
-  children: ReactNode;
+  children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   disabled?: boolean;
 }
-
-const springConfig: WithSpringConfig = {
-  damping: 15,
-  mass: 0.3,
-  stiffness: 150,
-  overshootClamping: true,
-};
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export function Button({
   onPress,
@@ -34,39 +19,20 @@ export function Button({
   disabled = false,
 }: ButtonProps) {
   const { theme } = useTheme();
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    if (!disabled) {
-      scale.value = withSpring(0.98, springConfig);
-    }
-  };
-
-  const handlePressOut = () => {
-    if (!disabled) {
-      scale.value = withSpring(1, springConfig);
-    }
-  };
 
   return (
-    <AnimatedPressable
+    <Pressable
       onPress={disabled ? undefined : onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      disabled={disabled}
-      style={[
+      android_ripple={{ color: theme.backgroundSecondary }}
+      style={({ pressed }) => [
         styles.button,
         {
-          backgroundColor: theme.link,
-          opacity: disabled ? 0.5 : 1,
+          backgroundColor: theme.primary,
+          opacity: disabled ? 0.55 : pressed ? 0.88 : 1,
         },
         style,
-        animatedStyle,
       ]}
+      disabled={disabled}
     >
       <ThemedText
         type="body"
@@ -74,7 +40,7 @@ export function Button({
       >
         {children}
       </ThemedText>
-    </AnimatedPressable>
+    </Pressable>
   );
 }
 
@@ -84,6 +50,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: Spacing.lg,
   },
   buttonText: {
     fontWeight: "600",

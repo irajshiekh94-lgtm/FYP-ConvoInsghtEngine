@@ -51,6 +51,14 @@ export interface AnalysisResult {
 
 export type JobStatus = "uploaded" | "processing" | "done" | "failed";
 
+export interface JobStatusResponse {
+  id: string;
+  status: JobStatus;
+  chat_name?: string;
+}
+
+export type JobUploadResponse = JobStatusResponse;
+
 export interface JobResultResponse {
   id: string;
   status: JobStatus;
