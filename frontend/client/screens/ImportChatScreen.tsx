@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { View, StyleSheet, Pressable, Alert, TextInput } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
@@ -13,6 +12,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { AppHeader } from "@/components/ui/AppHeader";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -39,7 +39,6 @@ function guessMimeType(filename: string): string {
 }
 
 export default function ImportChatScreen() {
-  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -147,29 +146,20 @@ export default function ImportChatScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <View
-        style={[
-          styles.banner,
-          {
-            paddingTop: insets.top + Spacing.lg,
-            backgroundColor: theme.primaryVariant,
-          },
-        ]}
-      >
-        <Feather name="message-circle" size={28} color="#FFFFFF" />
-        <View style={styles.bannerText}>
-          <ThemedText type="h3" style={styles.bannerTitle}>
-            Import WhatsApp chat
-          </ThemedText>
-          <ThemedText type="body" style={styles.bannerSubtitle}>
-            Convert chat exports into action items, priorities, and team-ready insights.
-          </ThemedText>
-        </View>
-      </View>
+      <AppHeader
+        title="Import chat"
+        subtitle="Export from WhatsApp → analyze in seconds"
+        onBack={() =>
+          navigation.canGoBack()
+            ? navigation.goBack()
+            : navigation.replace("Chats")
+        }
+      />
 
       <KeyboardAwareScrollViewCompat
         style={{ flex: 1 }}
         contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
       >
         <Card style={styles.card}>
           <ThemedText type="h4" style={styles.sectionTitle}>
@@ -294,9 +284,11 @@ export default function ImportChatScreen() {
         <Button
           onPress={startProcessing}
           disabled={!chatFile || isPreparing}
+          loading={isPreparing}
+          icon="zap"
           style={styles.submitButton}
         >
-          {isPreparing ? "Preparing…" : "Continue to analysis"}
+          {isPreparing ? "Preparing…" : "Analyze chat"}
         </Button>
       </KeyboardAwareScrollViewCompat>
     </ThemedView>
@@ -307,27 +299,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  banner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.xl,
-  },
-  bannerText: {
-    flex: 1,
-  },
-  bannerTitle: {
-    color: "#FFFFFF",
-    textTransform: "uppercase",
-  },
-  bannerSubtitle: {
-    color: "#FFFFFFCC",
-    marginTop: Spacing.xs,
-    lineHeight: 22,
-  },
   scrollContent: {
-    paddingTop: Spacing.lg,
+    paddingTop: Spacing.md,
     paddingBottom: Spacing.xl,
     paddingHorizontal: Spacing.lg,
   },

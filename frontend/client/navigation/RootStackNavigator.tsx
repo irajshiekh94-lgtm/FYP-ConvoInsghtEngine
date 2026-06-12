@@ -1,64 +1,42 @@
-import React, { useEffect, useState } from "react";
-import { ActivityIndicator, View } from "react-native";
+import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import MainTabNavigator from "@/navigation/MainTabNavigator";
-import UploadScreen from "@/screens/ImportChatScreen";
-import ProcessingScreen from "@/screens/ProcessingScreen";
-import DashboardScreen from "@/screens/ChatAnalysisScreen";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
-import AuthFlow from "@/screens/AuthFlow";
-import LoginScreen from "@/screens/LoginScreen";
-import { isLoggedIn } from "@/lib/auth";
-import { useTheme } from "@/hooks/useTheme";
+import { lazyScreen } from "@/navigation/lazyScreen";
 
 export type RootStackParamList = {
   Login: undefined;
   Signup: undefined;
-  /** Linear flow: login → upload → processing → dashboard */
   Upload: undefined;
   Processing: {
     rawText: string;
     chatName: string;
     currentUser: string;
   };
-  Dashboard: { chatId: string };
-  /** History & settings after first analysis */
+  Chats: undefined;
+  ChatDetail: { chatId: string };
+  Settings: undefined;
   Main: undefined;
-  /** @deprecated use Upload — kept for FAB deep links */
+  Dashboard: { chatId: string };
   ImportChat: undefined;
-  /** @deprecated use Dashboard */
   ChatAnalysis: { chatId: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-export default function RootStackNavigator() {
+const LoginScreen = lazyScreen(() => require("@/screens/LoginScreen"));
+const AuthFlow = lazyScreen(() => require("@/screens/AuthFlow"));
+const ChatsScreen = lazyScreen(() => require("@/screens/ChatsScreen"));
+const UploadScreen = lazyScreen(() => require("@/screens/ImportChatScreen"));
+const ProcessingScreen = lazyScreen(() => require("@/screens/ProcessingScreen"));
+const ChatDetailScreen = lazyScreen(() => require("@/screens/ChatDetailScreen"));
+const ProfileScreen = lazyScreen(() => require("@/screens/ProfileScreen"));
+
+interface RootStackNavigatorProps {
+  initialLoggedIn: boolean;
+}
+
+export default function RootStackNavigator({ initialLoggedIn }: RootStackNavigatorProps) {
   const screenOptions = useScreenOptions();
-  const opaqueScreenOptions = useScreenOptions({ transparent: false });
-  const { theme } = useTheme();
-  const [authReady, setAuthReady] = useState(false);
-  const [loggedIn, setLoggedIn] = useState(false);
-
-  useEffect(() => {
-    isLoggedIn()
-      .then(setLoggedIn)
-      .finally(() => setAuthReady(true));
-  }, []);
-
-  if (!authReady) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: theme.backgroundRoot,
-        }}
-      >
-        <ActivityIndicator size="large" color={theme.primary} />
-      </View>
-    );
-  }
 
   return (
     <Stack.Navigator
@@ -66,7 +44,7 @@ export default function RootStackNavigator() {
         ...screenOptions,
         headerBackTitle: "Back",
       }}
-      initialRouteName={loggedIn ? "Main" : "Login"}
+      initialRouteName={initialLoggedIn ? "Chats" : "Login"}
       id="RootStack"
     >
       <Stack.Screen
@@ -82,58 +60,49 @@ export default function RootStackNavigator() {
       />
 
       <Stack.Screen
+        name="Chats"
+        component={ChatsScreen}
+        options={{ headerShown: false, gestureEnabled: false }}
+      />
+
+      <Stack.Screen
         name="Upload"
         component={UploadScreen}
-        options={{
-          headerShown: false,
-          gestureEnabled: false,
-        }}
+        options={{ headerShown: false }}
       />
 
       <Stack.Screen
         name="Processing"
         component={ProcessingScreen}
-        options={{
-          headerShown: false,
-          gestureEnabled: false,
-        }}
+        options={{ headerShown: false, gestureEnabled: false }}
       />
 
       <Stack.Screen
-        name="Dashboard"
-        component={DashboardScreen}
-        options={{
-          headerTitle: "Insights",
-          gestureEnabled: false,
-          ...opaqueScreenOptions,
-        }}
-      />
-
-      <Stack.Screen
-        name="Main"
-        component={MainTabNavigator}
+        name="ChatDetail"
+        component={ChatDetailScreen}
         options={{ headerShown: false }}
       />
 
       <Stack.Screen
-        name="ImportChat"
-        component={UploadScreen}
-        options={{
-          presentation: "modal",
-          animation: "slide_from_bottom",
-          headerTitle: "Import Chat",
-          ...opaqueScreenOptions,
-        }}
+        name="Settings"
+        component={ProfileScreen}
+        options={{ headerShown: false }}
       />
 
       <Stack.Screen
+        name="Dashboard"
+        component={ChatDetailScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
         name="ChatAnalysis"
-        component={DashboardScreen}
-        options={{
-          headerTitle: "Analysis",
-          animation: "slide_from_right",
-          ...opaqueScreenOptions,
-        }}
+        component={ChatDetailScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="ImportChat"
+        component={UploadScreen}
+        options={{ headerShown: false }}
       />
     </Stack.Navigator>
   );

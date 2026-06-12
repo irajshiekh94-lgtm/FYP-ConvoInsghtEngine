@@ -4,85 +4,174 @@ import { getApiUrl } from "@/lib/query-client";
 export const AUTH_KEYS = {
   isLoggedIn: "@ConvoInsight_isLoggedIn",
   userName: "@ConvoInsight_userName",
-  userPhone: "@ConvoInsight_userPhone",
+  userEmail: "@ConvoInsight_userEmail",
   whatsAppName: "@ConvoInsight_whatsAppName",
 } as const;
 
+export type AuthPurpose = "login" | "signup";
+
 export interface StoredUser {
-  phone: string;
+  email: string;
   displayName: string;
 }
 
-export function normalizePhone(countryCode: string, digits: string): string {
-  const code = countryCode.replace(/\s/g, "");
-  const num = digits.replace(/\D/g, "");
-  return `${code}${num}`;
+export class AuthApiError extends Error {
+  code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "AuthApiError";
+    this.code = code;
+  }
 }
 
-export function isValidPhoneDigits(digits: string): boolean {
-  return digits.replace(/\D/g, "").length >= 10;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+export function isValidEmail(email: string): boolean {
+  return EMAIL_RE.test(normalizeEmail(email));
 }
 
 export async function getStoredUser(): Promise<StoredUser | null> {
-  const [phone, displayName] = await Promise.all([
-    AsyncStorage.getItem(AUTH_KEYS.userPhone),
+  const [email, displayName] = await Promise.all([
+    AsyncStorage.getItem(AUTH_KEYS.userEmail),
     AsyncStorage.getItem(AUTH_KEYS.userName),
   ]);
-  if (!phone) return null;
+  if (!email) return null;
   return {
-    phone,
+    email,
     displayName: displayName || "ConvoInsight User",
   };
 }
 
 export async function isLoggedIn(): Promise<boolean> {
   const flag = await AsyncStorage.getItem(AUTH_KEYS.isLoggedIn);
-  const phone = await AsyncStorage.getItem(AUTH_KEYS.userPhone);
-  return flag === "true" && !!phone;
+  const email = await AsyncStorage.getItem(AUTH_KEYS.userEmail);
+  return flag === "true" && !!email;
 }
 
 export async function saveSession(
-  phone: string,
+  email: string,
   displayName?: string
 ): Promise<StoredUser> {
+  const normalized = normalizeEmail(email);
   const name = (displayName || "ConvoInsight User").trim();
   await AsyncStorage.multiSet([
     [AUTH_KEYS.isLoggedIn, "true"],
-    [AUTH_KEYS.userPhone, phone],
+    [AUTH_KEYS.userEmail, normalized],
     [AUTH_KEYS.userName, name],
     [AUTH_KEYS.whatsAppName, name],
   ]);
-  return { phone, displayName: name };
+  return { email: normalized, displayName: name };
 }
 
 export async function logout(): Promise<void> {
   await AsyncStorage.setItem(AUTH_KEYS.isLoggedIn, "false");
 }
 
-/** Optional backend sync — fails silently if API is offline. */
-export async function syncUserWithBackend(
-  phone: string,
-  displayName: string
-): Promise<void> {
+async function parseApiError(res: Response): Promise<AuthApiError> {
   try {
-    const baseUrl = getApiUrl();
-    await fetch(new URL("/api/auth/login", baseUrl).href, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone, displayName }),
-    });
+    const data = await res.json();
+    if (typeof data?.detail === "string") {
+      return new AuthApiError(data.detail, data.error);
+    }
+    if (typeof data?.detail === "object" && data.detail !== null) {
+      const detail = data.detail as { error?: string; detail?: string };
+      if (typeof detail.detail === "string") {
+        return new AuthApiError(detail.detail, detail.error);
+      }
+    }
+    if (Array.isArray(data?.detail)) {
+      const message = data.detail
+        .map((d: { msg?: string }) => d.msg)
+        .filter(Boolean)
+        .join(", ");
+      return new AuthApiError(message || `Request failed (${res.status})`);
+    }
+    if (typeof data?.message === "string") {
+      return new AuthApiError(data.message);
+    }
   } catch {
-    /* offline-first */
+    /* ignore */
   }
+  return new AuthApiError(`Request failed (${res.status})`);
 }
 
-export async function loginWithPhone(
-  countryCode: string,
-  phoneDigits: string,
-  displayName?: string
+export interface SendOtpResult {
+  message: string;
+  devOtp?: string;
+}
+
+export async function sendOtp(
+  email: string,
+  purpose: AuthPurpose
+): Promise<SendOtpResult> {
+  const normalized = normalizeEmail(email);
+  const baseUrl = getApiUrl();
+  const url = new URL("/api/auth/send-otp", baseUrl).href;
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: normalized, purpose }),
+    });
+  } catch {
+    throw new AuthApiError(
+      `Cannot reach the server at ${baseUrl}. Start the backend and check EXPO_PUBLIC_API_URL in frontend/.env`
+    );
+  }
+
+  if (res.status === 404 && purpose === "login") {
+    throw await parseApiError(res);
+  }
+
+  if (res.status === 404) {
+    throw new AuthApiError(
+      "Auth API not found. Restart the backend server so /api/auth routes load.",
+      "auth_api_not_found"
+    );
+  }
+
+  if (!res.ok) {
+    throw await parseApiError(res);
+  }
+
+  const data = await res.json();
+  return {
+    message: data.message ?? "Code sent",
+    devOtp: data.devOtp,
+  };
+}
+
+export async function verifyOtpAndLogin(
+  email: string,
+  otp: string,
+  options: { purpose: AuthPurpose; displayName?: string }
 ): Promise<StoredUser> {
-  const phone = normalizePhone(countryCode, phoneDigits);
-  const user = await saveSession(phone, displayName);
-  await syncUserWithBackend(phone, user.displayName);
-  return user;
+  const normalized = normalizeEmail(email);
+  const baseUrl = getApiUrl();
+  const res = await fetch(new URL("/api/auth/verify-otp", baseUrl).href, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: normalized,
+      otp,
+      purpose: options.purpose,
+      displayName: options.displayName?.trim() || "ConvoInsight User",
+    }),
+  });
+  if (!res.ok) {
+    throw await parseApiError(res);
+  }
+  const data = await res.json();
+  const user = data.user;
+  return saveSession(
+    user?.email ?? normalized,
+    user?.displayName ?? options.displayName
+  );
 }

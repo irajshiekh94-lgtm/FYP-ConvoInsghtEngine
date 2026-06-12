@@ -39,6 +39,8 @@ def test_pipeline_structure_without_gemini(monkeypatch):
                     "cluster_id": c["cluster_id"],
                     "summary": f"{sender} discussed work deadlines.",
                     "message_count": c["message_count"],
+                    "messages": c.get("messages", []),
+                    "original_text": c.get("combined_text", ""),
                 }
             )
             out[sender]["total_messages"] += c["message_count"]
@@ -74,6 +76,11 @@ def test_pipeline_structure_without_gemini(monkeypatch):
     assert hasattr(result.priorities, "moderate")
     assert hasattr(result.priorities, "low")
     assert isinstance(result.actions, list)
+    assert isinstance(result.entities, list)
+    assert isinstance(result.topics, list)
+    assert result.sentiment.label in {"positive", "negative", "neutral"}
+    assert result.analytics.total_messages == meta["messageCount"]
+    assert result.metadata.chat_name == "Test"
     assert meta["messageCount"] >= 3
 
 
@@ -81,13 +88,28 @@ def test_priority_buckets():
     summaries = {
         "Alice": {
             "clusters": [
-                {"summary": "Urgent deadline", "intent": "complaint", "cluster_id": 0, "message_count": 2}
+                {
+                    "summary": "Urgent deadline discussion",
+                    "intent": "complaint",
+                    "cluster_id": 0,
+                    "message_count": 2,
+                    "messages": [
+                        {"sender": "Alice", "content": "We need the report by Friday urgently"},
+                        {"sender": "Alice", "content": "Please confirm today"},
+                    ],
+                }
             ],
             "total_messages": 2,
         },
         "Bob": {
             "clusters": [
-                {"summary": "Hello there", "intent": "greeting", "cluster_id": 1, "message_count": 1}
+                {
+                    "summary": "Brief greeting",
+                    "intent": "greeting",
+                    "cluster_id": 1,
+                    "message_count": 1,
+                    "messages": [{"sender": "Bob", "content": "Hello there"}],
+                }
             ],
             "total_messages": 1,
         },
@@ -95,5 +117,8 @@ def test_priority_buckets():
     p = classify_priorities(summaries)
     assert len(p.urgent) >= 1
     assert len(p.low) >= 1
+    assert p.urgent[0].text == "We need the report by Friday urgently"
+    assert "discussed" not in p.urgent[0].text.lower()
+    assert p.low[0].text == "Hello there"
     actions = extract_actions(summaries, p)
     assert isinstance(actions, list)

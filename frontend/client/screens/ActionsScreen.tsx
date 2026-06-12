@@ -10,7 +10,8 @@ import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
-import { Card } from "@/components/Card";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { useActions } from "@/hooks/useActions";
@@ -138,66 +139,21 @@ export default function ActionsScreen() {
     }
   });
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
-      <Feather name="check-circle" size={64} color={theme.textSecondary} />
-      <ThemedText type="h4" style={styles.emptyTitle}>
-        No {selectedSegment.toLowerCase()} items
-      </ThemedText>
-      <ThemedText
-        type="body"
-        style={[styles.emptyDescription, { color: theme.textSecondary }]}
-      >
-        {selectedSegment === "Pending"
-          ? "Your action items will appear here after analyzing chats"
-          : selectedSegment === "Completed"
-          ? "Completed items will show here"
-          : "No overdue items"}
-      </ThemedText>
-    </View>
-  );
-
   return (
     <ThemedView style={styles.container}>
-      <Card
-        style={[
-          styles.segmentContainer,
-          {
-            paddingTop: screen.paddingTop,
-            paddingHorizontal: screen.paddingHorizontal,
-          },
-        ]}
+      <View
+        style={{
+          paddingTop: screen.paddingTop,
+          paddingHorizontal: screen.paddingHorizontal,
+          paddingBottom: Spacing.sm,
+        }}
       >
-        <View
-          style={[
-            styles.segmentedControl,
-            { backgroundColor: theme.backgroundDefault },
-          ]}
-        >
-          {SEGMENTS.map((segment) => (
-            <Pressable
-              key={segment}
-              style={[
-                styles.segmentButton,
-                selectedSegment === segment && {
-                  backgroundColor: theme.primary,
-                },
-              ]}
-              onPress={() => setSelectedSegment(segment)}
-            >
-              <ThemedText
-                type="small"
-                style={{
-                  color: selectedSegment === segment ? "#FFFFFF" : theme.text,
-                  fontWeight: selectedSegment === segment ? "600" : "400",
-                }}
-              >
-                {segment}
-              </ThemedText>
-            </Pressable>
-          ))}
-        </View>
-      </Card>
+        <SegmentedControl
+          options={SEGMENTS}
+          selected={selectedSegment}
+          onSelect={setSelectedSegment}
+        />
+      </View>
       <FlatList
         data={filteredActions}
         keyExtractor={(item) => item.id}
@@ -212,7 +168,19 @@ export default function ActionsScreen() {
         }}
         scrollIndicatorInsets={{ bottom: screen.scrollIndicatorBottom }}
         ItemSeparatorComponent={() => <View style={{ height: Spacing.md }} />}
-        ListEmptyComponent={renderEmptyState}
+        ListEmptyComponent={
+          <EmptyState
+            icon="check-square"
+            title={`No ${selectedSegment.toLowerCase()} tasks`}
+            description={
+              selectedSegment === "Pending"
+                ? "Action items from analyzed chats will appear here."
+                : selectedSegment === "Completed"
+                ? "Completed tasks will show here."
+                : "You're all caught up — no overdue items."
+            }
+          />
+        }
       />
     </ThemedView>
   );

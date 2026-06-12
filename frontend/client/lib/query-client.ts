@@ -1,13 +1,39 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import Constants from "expo-constants";
 
+const DEFAULT_API_PORT = "8000";
+
+/** Metro / Expo Go dev host, e.g. 192.168.1.5 from debuggerHost or hostUri. */
+function getExpoDevHost(): string | null {
+  const candidates: (string | undefined)[] = [
+    Constants.expoConfig?.hostUri,
+    (Constants as { expoGoConfig?: { debuggerHost?: string } }).expoGoConfig
+      ?.debuggerHost,
+    (Constants as { manifest?: { debuggerHost?: string } }).manifest?.debuggerHost,
+    (Constants as { manifest2?: { extra?: { expoGo?: { debuggerHost?: string } } } })
+      .manifest2?.extra?.expoGo?.debuggerHost,
+  ];
+
+  for (const raw of candidates) {
+    if (!raw) continue;
+    const host = raw.replace(/^exp:\/\//, "").split(":")[0]?.trim();
+    if (
+      host &&
+      host !== "localhost" &&
+      host !== "127.0.0.1" &&
+      !host.includes("/")
+    ) {
+      return host;
+    }
+  }
+  return null;
+}
+
 /**
  * Base URL for the ConvoInsight Python API (FastAPI on port 8000 by default).
  *
  * Set EXPO_PUBLIC_API_URL to the full base, e.g. http://localhost:8000
  * or http://192.168.1.10:8000 for a physical device on the same LAN.
- *
- * Falls back to EXPO_PUBLIC_DOMAIN (host[:port] only) with http for local hosts.
  */
 export function getApiUrl(): string {
   let urlStr = process.env.EXPO_PUBLIC_API_URL?.trim();
@@ -18,46 +44,49 @@ export function getApiUrl(): string {
     }
   }
 
-  // If still not set, default to localhost
   if (!urlStr) {
-    urlStr = "http://127.0.0.1:8000/";
+    urlStr = `http://127.0.0.1:${DEFAULT_API_PORT}`;
   }
 
-  // Ensure it has protocol
   if (!/^https?:\/\//i.test(urlStr)) {
     urlStr = `http://${urlStr}`;
-  }
-
-  // Ensure trailing slash
-  if (!urlStr.endsWith("/")) {
-    urlStr = `${urlStr}/`;
   }
 
   try {
     const url = new URL(urlStr);
 
-    // Swap localhost/127.0.0.1 with the actual Metro bundler IP if running under Expo Go
-    if ((url.hostname === "localhost" || url.hostname === "127.0.0.1") && Constants.expoConfig?.hostUri) {
-      const metroHost = Constants.expoConfig.hostUri.split(":")[0];
-      if (metroHost && metroHost !== "localhost" && metroHost !== "127.0.0.1") {
-        url.hostname = metroHost;
-      }
+    // Default API port when only an IP/hostname was provided
+    if (!url.port && (url.protocol === "http:" || url.protocol === "https:")) {
+      url.port = DEFAULT_API_PORT;
     }
 
-    // Replit / production hosts use HTTPS; local dev uses HTTP
+    // On a physical device, localhost points at the phone — use Metro's LAN IP
+    const devHost = getExpoDevHost();
+    if (
+      devHost &&
+      (url.hostname === "localhost" || url.hostname === "127.0.0.1")
+    ) {
+      url.hostname = devHost;
+    }
+
     const isLocal =
       url.hostname === "localhost" ||
       url.hostname === "127.0.0.1" ||
       url.hostname.startsWith("192.168.") ||
-      url.hostname.startsWith("10.");
+      url.hostname.startsWith("10.") ||
+      url.hostname === "10.0.2.2";
 
     if (!isLocal && url.protocol === "http:") {
       url.protocol = "https:";
     }
 
+    if (!url.pathname.endsWith("/")) {
+      url.pathname = `${url.pathname}/`;
+    }
+
     return url.href;
   } catch {
-    return urlStr;
+    return urlStr.endsWith("/") ? urlStr : `${urlStr}/`;
   }
 }
 

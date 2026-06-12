@@ -6,18 +6,24 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { ThemedView } from "@/components/ThemedView";
 import { ThemedText } from "@/components/ThemedText";
 import { UploadProgress, type UploadStep } from "@/components/UploadProgress";
+import { Surface } from "@/components/ui/Surface";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing } from "@/constants/theme";
+import { Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { runAnalysisWithProgress } from "@/lib/run-analysis-with-progress";
 import { transformJobResultToChat } from "@/lib/transform-analysis";
 import { useChats } from "@/hooks/useChats";
 import { useActions } from "@/hooks/useActions";
+import { useSettings } from "@/hooks/useSettings";
+import {
+  countUrgentMessages,
+  presentUrgentNotification,
+} from "@/lib/urgent-notifications";
 
 type ProcessingRoute = RouteProp<RootStackParamList, "Processing">;
 
 const STEPS: UploadStep[] = [
-  { id: "uploading", label: "Uploading" },
+  { id: "uploading", label: "Uploading chat" },
   { id: "parsing", label: "Parsing messages" },
   { id: "analyzing", label: "Analyzing insights" },
   { id: "done", label: "Complete" },
@@ -26,13 +32,12 @@ const STEPS: UploadStep[] = [
 export default function ProcessingScreen() {
   const { theme } = useTheme();
   const route = useRoute<ProcessingRoute>();
-  const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { addChat } = useChats();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { chats, addChat } = useChats();
   const { addActions } = useActions();
+  const { settings } = useSettings();
 
   const { rawText, chatName, currentUser } = route.params;
-
   const [step, setStep] = useState("uploading");
   const [statusMessage, setStatusMessage] = useState("Uploading…");
 
@@ -52,7 +57,6 @@ export default function ProcessingScreen() {
         );
 
         if (cancelled) return;
-
         if (job.status !== "done" || !job.result) {
           throw new Error(job.error || "Analysis did not complete");
         }
@@ -64,27 +68,30 @@ export default function ProcessingScreen() {
           await addActions(chat.extractedData.actionItems);
         }
 
+        if (settings.urgentAlertsEnabled) {
+          const totalUrgent = countUrgentMessages([chat, ...chats]);
+          if (totalUrgent > 0) {
+            await presentUrgentNotification(totalUrgent);
+          }
+        }
+
         navigation.reset({
           index: 0,
-          routes: [{ name: "Dashboard", params: { chatId: chat.id } }],
+          routes: [{ name: "Chats" }],
         });
       } catch (error) {
         if (cancelled) return;
-        const message =
-          error instanceof Error ? error.message : "Analysis failed";
+        const message = error instanceof Error ? error.message : "Analysis failed";
         Alert.alert("Analysis failed", message, [
-          {
-            text: "Back to upload",
-            onPress: () => navigation.replace("Upload"),
-          },
+          { text: "Back to upload", onPress: () => navigation.replace("Upload") },
         ]);
       }
     })();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [rawText, chatName, currentUser, addChat, addActions, navigation]);
+    return () => { cancelled = true; };
+  }, [rawText, chatName, currentUser, chats, settings.urgentAlertsEnabled, addChat, addActions, navigation]);
+
+  const isAnalyzing = step === "analyzing";
 
   return (
     <ThemedView style={styles.container}>
@@ -92,13 +99,19 @@ export default function ProcessingScreen() {
         <ThemedText type="h3" style={styles.title}>
           {statusMessage}
         </ThemedText>
-        <ThemedText
-          type="body"
-          style={[styles.subtitle, { color: theme.textSecondary }]}
-        >
-          Analyzing {chatName}
+        <ThemedText type="body" style={[styles.subtitle, { color: theme.textSecondary }]}>
+          {chatName}
         </ThemedText>
-        <UploadProgress steps={STEPS} currentStepId={step} />
+
+        <Surface style={styles.progressCard} elevated>
+          <UploadProgress steps={STEPS} currentStepId={step} />
+        </Surface>
+
+        {isAnalyzing ? (
+          <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "center" }}>
+            Large chats may take a few minutes. Keep the app open.
+          </ThemedText>
+        ) : null}
       </View>
     </ThemedView>
   );
@@ -110,7 +123,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     padding: Spacing.xl,
+    alignItems: "center",
   },
-  title: { textAlign: "center", marginBottom: Spacing.sm },
+  title: { textAlign: "center", marginBottom: Spacing.xs },
   subtitle: { textAlign: "center", marginBottom: Spacing.xl },
+  progressCard: { width: "100%", marginBottom: Spacing.lg },
 });

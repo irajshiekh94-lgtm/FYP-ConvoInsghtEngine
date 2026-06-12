@@ -13,6 +13,7 @@ ConvoInsight analysis pipeline (strict order):
 """
 
 import logging
+import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -26,6 +27,13 @@ from backend.services.action_extractor import extract_actions
 from backend.services.cluster_bridge import shape_clusters
 from backend.services.clustering import ClusteringService
 from backend.services.intentpipeline import classify_all
+from backend.services.insight_enrichment import (
+    analyze_sentiment,
+    build_analytics,
+    build_metadata,
+    extract_entities,
+    extract_topics,
+)
 from backend.services.message_cleaner import clean_messages
 from backend.services.priority_classifier import classify_priorities
 from backend.services.structured_summary import build_structured_summary
@@ -46,6 +54,16 @@ def _get_summarization() -> SummarizationService:
 
 
 def _summarize_clusters(shaped_clusters: list, current_user: str) -> dict:
+    max_ml_clusters = int(os.getenv("MAX_ML_SUMMARIZE_CLUSTERS", "20"))
+    if len(shaped_clusters) > max_ml_clusters:
+        logger.info(
+            "Skipping slow ML summarization for %d clusters (cap %d); using fast rule-based summaries",
+            len(shaped_clusters),
+            max_ml_clusters,
+        )
+        return SummarizationService.summarize_by_sender_rule_based(
+            shaped_clusters, current_user
+        )
     try:
         return _get_summarization().summarize_by_sender(shaped_clusters, current_user)
     except EnvironmentError as exc:
@@ -128,6 +146,31 @@ def run_analysis_pipeline(
     actions = extract_actions(sender_summaries, priorities)
     logger.info("Step 8 actions: %d", len(actions))
 
+    # 9. Enrichments
+    entities = extract_entities(cleaned, parsed.get("participants", []))
+    topics = extract_topics(shaped)
+    sentiment = analyze_sentiment(cleaned)
+    analytics = build_analytics(
+        cleaned,
+        parsed.get("participants", []),
+        priorities,
+        actions,
+        topics,
+        entities,
+    )
+    metadata = build_metadata(
+        parsed.get("chatName", chat_name),
+        parsed.get("chatType", "individual"),
+        parsed.get("participants", []),
+        current_user,
+    )
+    logger.info(
+        "Step 9 enrich: entities=%d topics=%d sentiment=%s",
+        len(entities),
+        len(topics),
+        sentiment.label,
+    )
+
     # Structured summary (from cluster summaries + priorities)
     conversation_summary = build_structured_summary(
         sender_summaries, priorities.urgent
@@ -139,6 +182,11 @@ def run_analysis_pipeline(
         conversation_summary=conversation_summary,
         priorities=priorities,
         actions=actions,
+        entities=entities,
+        topics=topics,
+        sentiment=sentiment,
+        analytics=analytics,
+        metadata=metadata,
     )
 
     meta = {

@@ -40,6 +40,47 @@ export interface ConversationSummaryOut {
   overview: string;
 }
 
+export interface EntityOut {
+  text: string;
+  type: string;
+  count: number;
+}
+
+export interface TopicOut {
+  id: number;
+  title: string;
+  senders: string[];
+  message_count: number;
+  keywords: string[];
+}
+
+export interface SentimentOut {
+  label: string;
+  score: number;
+  positive_count: number;
+  negative_count: number;
+  neutral_count: number;
+}
+
+export interface AnalyticsOut {
+  total_messages: number;
+  total_participants: number;
+  messages_by_sender: Record<string, number>;
+  action_count: number;
+  urgent_count: number;
+  topic_count: number;
+  entity_count: number;
+}
+
+export interface MetadataOut {
+  chat_name: string;
+  chat_type: string;
+  participants: string[];
+  current_user: string;
+  processed_at: string;
+  pipeline_version: string;
+}
+
 /** Exact backend `result` object when status is `done`. */
 export interface AnalysisResult {
   messages: MessageOut[];
@@ -47,6 +88,11 @@ export interface AnalysisResult {
   conversation_summary: ConversationSummaryOut;
   priorities: PrioritiesOut;
   actions: ActionItemOut[];
+  entities: EntityOut[];
+  topics: TopicOut[];
+  sentiment: SentimentOut;
+  analytics: AnalyticsOut;
+  metadata: MetadataOut;
 }
 
 export type JobStatus = "uploaded" | "processing" | "done" | "failed";
@@ -82,4 +128,31 @@ export const EMPTY_PRIORITIES: PrioritiesOut = {
   urgent: [],
   moderate: [],
   low: [],
+};
+
+export const EMPTY_SENTIMENT: SentimentOut = {
+  label: "neutral",
+  score: 0,
+  positive_count: 0,
+  negative_count: 0,
+  neutral_count: 0,
+};
+
+export const EMPTY_ANALYTICS: AnalyticsOut = {
+  total_messages: 0,
+  total_participants: 0,
+  messages_by_sender: {},
+  action_count: 0,
+  urgent_count: 0,
+  topic_count: 0,
+  entity_count: 0,
+};
+
+export const EMPTY_METADATA: MetadataOut = {
+  chat_name: "",
+  chat_type: "individual",
+  participants: [],
+  current_user: "Me",
+  processed_at: "",
+  pipeline_version: "",
 };

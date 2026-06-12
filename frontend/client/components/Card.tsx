@@ -1,81 +1,75 @@
 import React from "react";
-import { StyleSheet, Pressable, ViewStyle, StyleProp } from "react-native";
+import { StyleSheet, Pressable, View, ViewStyle, StyleProp } from "react-native";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing, BorderRadius, Shadows } from "@/constants/theme";
 
 interface CardProps {
-  elevation?: number;
   title?: string;
   description?: string;
   children?: React.ReactNode;
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
+  flat?: boolean;
 }
 
-const getBackgroundColorForElevation = (elevation: number, theme: any): string => {
-  switch (elevation) {
-    case 1:
-      return theme.backgroundDefault;
-    case 2:
-      return theme.backgroundSecondary;
-    default:
-      return theme.backgroundRoot;
-  }
-};
-
 export function Card({
-  elevation = 1,
   title,
   description,
   children,
   onPress,
   style,
+  flat = false,
 }: CardProps) {
   const { theme } = useTheme();
-  const backgroundColor = getBackgroundColorForElevation(elevation, theme);
 
-  return (
-    <Pressable
-      onPress={onPress}
-      android_ripple={{ color: theme.backgroundSecondary }}
-      style={({ pressed }) => [
-        styles.card,
-        { backgroundColor, opacity: pressed ? 0.95 : 1 },
-        style,
-      ]}
-    >
+  const content = (
+    <>
       {title ? (
         <ThemedText type="h4" style={styles.cardTitle}>
           {title}
         </ThemedText>
       ) : null}
       {description ? (
-        <ThemedText type="small" style={styles.cardDescription}>
+        <ThemedText type="small" style={[styles.cardDescription, { color: theme.textSecondary }]}>
           {description}
         </ThemedText>
       ) : null}
       {children}
-    </Pressable>
+    </>
   );
+
+  const cardStyle = [
+    styles.card,
+    !flat && Shadows.sm,
+    { backgroundColor: theme.surfaceElevated },
+    style,
+  ];
+
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [cardStyle, { opacity: pressed ? 0.96 : 1 }]}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+
+  return <View style={cardStyle}>{content}</View>;
 }
 
 const styles = StyleSheet.create({
   card: {
-    padding: Spacing.xl,
-    borderRadius: BorderRadius["2xl"],
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 3,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
   },
   cardTitle: {
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.xs,
   },
   cardDescription: {
-    opacity: 0.75,
     marginBottom: Spacing.md,
   },
 });

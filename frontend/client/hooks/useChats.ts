@@ -2,295 +2,44 @@ import { useState, useEffect, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Chat, PrioritiesBucket } from "@/types";
 import {
+  EMPTY_ANALYTICS,
   EMPTY_PRIORITIES,
   EMPTY_CONVERSATION_SUMMARY,
+  EMPTY_METADATA,
+  EMPTY_SENTIMENT,
 } from "@/lib/transform-analysis";
 
 const CHATS_STORAGE_KEY = "@ConvoInsight_chats";
-const DUMMY_INITIALIZED_KEY = "@ConvoInsight_dummy_initialized";
 
-function normalizeChat(chat: Chat): Chat {
+type StoredChat = Omit<Chat, "extractedData"> & {
+  extractedData: Partial<Chat["extractedData"]>;
+};
+
+function normalizeChat(chat: StoredChat): Chat {
   const priorities: PrioritiesBucket =
     chat.extractedData?.priorities ?? EMPTY_PRIORITIES;
   const conversationSummary =
     chat.extractedData?.conversationSummary ?? EMPTY_CONVERSATION_SUMMARY;
   return {
     ...chat,
+    isRead: chat.isRead ?? false,
     extractedData: {
       ...chat.extractedData,
+      actionItems: chat.extractedData?.actionItems ?? [],
+      businessOrders: chat.extractedData?.businessOrders ?? [],
+      meetings: chat.extractedData?.meetings ?? [],
+      importantMessages: chat.extractedData?.importantMessages ?? [],
+      senderInsights: chat.extractedData?.senderInsights ?? [],
       priorities,
       conversationSummary,
+      entities: chat.extractedData?.entities ?? [],
+      topics: chat.extractedData?.topics ?? [],
+      sentiment: chat.extractedData?.sentiment ?? EMPTY_SENTIMENT,
+      analytics: chat.extractedData?.analytics ?? EMPTY_ANALYTICS,
+      metadata: chat.extractedData?.metadata ?? EMPTY_METADATA,
     },
   };
 }
-
-// Dummy data
-const DUMMY_CHATS: Chat[] = [
-  {
-    id: "dummy_1",
-    name: "Team Project Discussion",
-    category: "business",
-    analyzedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-    summary: "Discussion about Q1 project deliverables, timeline adjustments, and resource allocation. Team agreed on new milestones and action items for the next sprint.",
-    actionCount: 5,
-    messages: [],
-    extractedData: {
-      actionItems: [
-        {
-          id: "dummy_1_action_1",
-          chatId: "dummy_1",
-          chatName: "Team Project Discussion",
-          content: "Complete UI mockups for dashboard",
-          type: "task",
-          urgency: "high",
-          dueDate: new Date(Date.now() + 86400000 * 2).toISOString(),
-          completed: false,
-          createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-        },
-        {
-          id: "dummy_1_action_2",
-          chatId: "dummy_1",
-          chatName: "Team Project Discussion",
-          content: "Review API documentation",
-          type: "task",
-          urgency: "medium",
-          dueDate: new Date(Date.now() + 86400000 * 5).toISOString(),
-          completed: false,
-          createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-        },
-      ],
-      businessOrders: [],
-      meetings: [
-        {
-          id: "dummy_1_meeting_1",
-          title: "Sprint Planning",
-          date: new Date(Date.now() + 86400000 * 3).toISOString(),
-          time: "10:00 AM",
-          location: "Conference Room A",
-          participants: ["John", "Sarah", "Mike"],
-        },
-      ],
-      importantMessages: [],
-      senderInsights: [],
-      priorities: {
-        urgent: [],
-        moderate: [
-          {
-            sender: "Sarah",
-            text: "Complete UI mockups for dashboard",
-            intent: "request",
-          },
-        ],
-        low: [],
-      },
-    },
-  },
-  {
-    id: "dummy_2",
-    name: "Client Requirements",
-    category: "important",
-    analyzedAt: new Date(Date.now() - 86400000).toISOString(),
-    summary: "Client outlined new feature requirements and budget constraints. Need to revise proposal and submit updated timeline by end of week.",
-    actionCount: 3,
-    messages: [],
-    extractedData: {
-      actionItems: [
-        {
-          id: "dummy_2_action_1",
-          chatId: "dummy_2",
-          chatName: "Client Requirements",
-          content: "Update project proposal with new features",
-          type: "deadline",
-          urgency: "high",
-          dueDate: new Date(Date.now() + 86400000).toISOString(),
-          completed: false,
-          createdAt: new Date(Date.now() - 86400000).toISOString(),
-        },
-        {
-          id: "dummy_2_action_2",
-          chatId: "dummy_2",
-          chatName: "Client Requirements",
-          content: "Schedule follow-up call with client",
-          type: "meeting",
-          urgency: "medium",
-          dueDate: new Date(Date.now() + 86400000 * 2).toISOString(),
-          completed: false,
-          createdAt: new Date(Date.now() - 86400000).toISOString(),
-        },
-      ],
-      businessOrders: [],
-      meetings: [],
-      importantMessages: [
-        {
-          id: "dummy_2_msg_1",
-          content: "Budget approval needed by Friday",
-          sender: "Client Manager",
-          timestamp: new Date(Date.now() - 86400000).toISOString(),
-          reason: "Contains deadline and financial commitment",
-        },
-      ],
-      senderInsights: [],
-      priorities: {
-        urgent: [
-          {
-            sender: "Client Manager",
-            text: "Budget approval needed by Friday",
-            intent: "complaint",
-          },
-        ],
-        moderate: [],
-        low: [],
-      },
-    },
-  },
-  {
-    id: "dummy_3",
-    name: "Family Group",
-    category: "general",
-    analyzedAt: new Date(Date.now() - 86400000 * 5).toISOString(),
-    summary: "Family planning for upcoming vacation. Discussed destination options, budget, and travel dates. Mom suggested beach resort.",
-    actionCount: 2,
-    messages: [],
-    extractedData: {
-      actionItems: [
-        {
-          id: "dummy_3_action_1",
-          chatId: "dummy_3",
-          chatName: "Family Group",
-          content: "Book flight tickets",
-          type: "task",
-          urgency: "low",
-          dueDate: new Date(Date.now() + 86400000 * 10).toISOString(),
-          completed: false,
-          createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
-        },
-      ],
-      businessOrders: [],
-      meetings: [],
-      importantMessages: [],
-      senderInsights: [],
-      priorities: {
-        urgent: [],
-        moderate: [],
-        low: [
-          {
-            sender: "Mom",
-            text: "Family vacation planning",
-            intent: "information",
-          },
-        ],
-      },
-    },
-  },
-  {
-    id: "dummy_4",
-    name: "Customer Order - Ahmad",
-    category: "business",
-    analyzedAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-    summary: "Customer placed order for 50 units. Confirmed delivery address and payment terms. Express delivery requested.",
-    actionCount: 4,
-    messages: [],
-    extractedData: {
-      actionItems: [
-        {
-          id: "dummy_4_action_1",
-          chatId: "dummy_4",
-          chatName: "Customer Order - Ahmad",
-          content: "Process payment confirmation",
-          type: "order",
-          urgency: "high",
-          dueDate: new Date(Date.now() + 86400000).toISOString(),
-          completed: false,
-          createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-        },
-        {
-          id: "dummy_4_action_2",
-          chatId: "dummy_4",
-          chatName: "Customer Order - Ahmad",
-          content: "Arrange express shipping",
-          type: "order",
-          urgency: "high",
-          dueDate: new Date(Date.now() + 86400000 * 2).toISOString(),
-          completed: false,
-          createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-        },
-      ],
-      businessOrders: [
-        {
-          id: "dummy_4_order_1",
-          product: "Premium Widget Set",
-          quantity: 50,
-          price: "PKR 125,000",
-          deliveryDate: new Date(Date.now() + 86400000 * 7).toISOString(),
-          customerName: "Ahmad Khan",
-          status: "pending",
-        },
-      ],
-      meetings: [],
-      importantMessages: [],
-      senderInsights: [],
-      priorities: {
-        urgent: [
-          {
-            sender: "Ahmad Khan",
-            text: "Express delivery for 50 units",
-            intent: "request",
-          },
-        ],
-        moderate: [],
-        low: [],
-      },
-    },
-  },
-  {
-    id: "dummy_5",
-    name: "Marketing Campaign",
-    category: "actionable",
-    analyzedAt: new Date(Date.now() - 86400000 * 4).toISOString(),
-    summary: "Planning for upcoming social media campaign. Discussed content calendar, budget allocation, and target metrics.",
-    actionCount: 3,
-    messages: [],
-    extractedData: {
-      actionItems: [
-        {
-          id: "dummy_5_action_1",
-          chatId: "dummy_5",
-          chatName: "Marketing Campaign",
-          content: "Create content calendar for next month",
-          type: "task",
-          urgency: "medium",
-          dueDate: new Date(Date.now() + 86400000 * 7).toISOString(),
-          completed: false,
-          createdAt: new Date(Date.now() - 86400000 * 4).toISOString(),
-        },
-      ],
-      businessOrders: [],
-      meetings: [
-        {
-          id: "dummy_5_meeting_1",
-          title: "Marketing Review",
-          date: new Date(Date.now() + 86400000 * 5).toISOString(),
-          time: "2:00 PM",
-          location: "Virtual - Zoom",
-          participants: ["Marketing Team"],
-        },
-      ],
-      importantMessages: [],
-      senderInsights: [],
-      priorities: {
-        urgent: [],
-        moderate: [
-          {
-            sender: "Marketing Team",
-            text: "Content calendar for next month",
-            intent: "question",
-          },
-        ],
-        low: [],
-      },
-    },
-  },
-];
 
 export function useChats() {
   const [chats, setChats] = useState<Chat[]>([]);
@@ -303,19 +52,11 @@ export function useChats() {
   const loadChats = async () => {
     try {
       const stored = await AsyncStorage.getItem(CHATS_STORAGE_KEY);
-      const dummyInitialized = await AsyncStorage.getItem(DUMMY_INITIALIZED_KEY);
-      
       if (stored) {
-        const parsed: Chat[] = JSON.parse(stored);
+        const parsed: StoredChat[] = JSON.parse(stored);
         setChats(parsed.map(normalizeChat));
-      } else if (!dummyInitialized) {
-        const normalized = DUMMY_CHATS.map(normalizeChat);
-        await AsyncStorage.setItem(
-          CHATS_STORAGE_KEY,
-          JSON.stringify(normalized)
-        );
-        await AsyncStorage.setItem(DUMMY_INITIALIZED_KEY, "true");
-        setChats(normalized);
+      } else {
+        setChats([]);
       }
     } catch (error) {
       console.error("Failed to load chats:", error);
@@ -334,12 +75,12 @@ export function useChats() {
   };
 
   const addChat = useCallback(async (chat: Chat) => {
-    setChats((prev) => {
-      const newChats = [chat, ...prev];
-      void AsyncStorage.setItem(CHATS_STORAGE_KEY, JSON.stringify(newChats));
-      return newChats;
-    });
-  }, []);
+    const stored = await AsyncStorage.getItem(CHATS_STORAGE_KEY);
+    const existingChats: StoredChat[] = stored ? JSON.parse(stored) : chats;
+    const newChats = [normalizeChat(chat), ...existingChats.map(normalizeChat)];
+    await AsyncStorage.setItem(CHATS_STORAGE_KEY, JSON.stringify(newChats));
+    setChats(newChats);
+  }, [chats]);
 
   const updateChat = useCallback(async (chatId: string, updates: Partial<Chat>) => {
     const newChats = chats.map((chat) =>
@@ -353,6 +94,28 @@ export function useChats() {
     await saveChats(newChats);
   }, [chats]);
 
+  const markChatAsRead = useCallback(async (chatId: string) => {
+    try {
+      const stored = await AsyncStorage.getItem(CHATS_STORAGE_KEY);
+      if (!stored) return;
+
+      const parsed: StoredChat[] = JSON.parse(stored);
+      const index = parsed.findIndex((c) => c.id === chatId);
+      if (index === -1 || parsed[index].isRead) return;
+
+      parsed[index] = {
+        ...parsed[index],
+        isRead: true,
+        readAt: new Date().toISOString(),
+      };
+      const normalized = parsed.map(normalizeChat);
+      await AsyncStorage.setItem(CHATS_STORAGE_KEY, JSON.stringify(normalized));
+      setChats(normalized);
+    } catch (error) {
+      console.error("Failed to mark chat as read:", error);
+    }
+  }, []);
+
   const getChatById = useCallback(
     (chatId: string) => chats.find((chat) => chat.id === chatId),
     [chats]
@@ -363,14 +126,25 @@ export function useChats() {
     setChats([]);
   }, []);
 
+  /** Removes generated summaries while keeping analyzed chats and insights. */
+  const clearSummaryCache = useCallback(async () => {
+    const cleared = chats.map((chat) => {
+      const { twentyFourHourSummary: _, ...rest } = chat;
+      return rest;
+    });
+    await saveChats(cleared);
+  }, [chats]);
+
   return {
     chats,
     isLoading,
     addChat,
     updateChat,
     deleteChat,
+    markChatAsRead,
     getChatById,
     clearAllChats,
+    clearSummaryCache,
     refreshChats: loadChats,
   };
 }

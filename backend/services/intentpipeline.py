@@ -70,7 +70,12 @@ def classify_intent(summary_text: str) -> str:
     if any(w in lower for w in ["hello", "hi ", "hey ", "good morning", "good evening", "how are you"]):
         return "greeting"
 
-    if not os.getenv("GEMINI_API_KEY") or not GENAI_AVAILABLE:
+    use_gemini = os.getenv("ENABLE_GEMINI_INTENT", "0").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if not use_gemini or not os.getenv("GEMINI_API_KEY") or not GENAI_AVAILABLE:
         return _rule_based_intent(summary_text)
 
     labels_str = ", ".join(INTENT_LABELS)

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
+  ActivityIndicator,
   View,
   ScrollView,
   StyleSheet,
@@ -25,6 +26,10 @@ import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useChats } from "@/hooks/useChats";
+import { summarizeChat24h } from "@/lib/api-client";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { Surface } from "@/components/ui/Surface";
+import { Button } from "@/components/Button";
 import {
   ActionItem,
   BusinessOrder,
@@ -33,6 +38,12 @@ import {
   Message,
   PriorityInsight,
   PrioritiesBucket,
+  EntityInsight,
+  TopicInsight,
+  AnalyticsInsight,
+  MetadataInsight,
+  SentimentInsight,
+  TwentyFourHourSummary,
 } from "@/types";
 import { EMPTY_PRIORITIES } from "@/lib/transform-analysis";
 
@@ -243,15 +254,229 @@ function ImportantMessageCard({ message }: { message: ImportantMessage }) {
   );
 }
 
+function StatGrid({ analytics }: { analytics: AnalyticsInsight }) {
+  const { theme } = useTheme();
+  const stats = [
+    ["Messages", analytics.total_messages],
+    ["Participants", analytics.total_participants],
+    ["Topics", analytics.topic_count],
+    ["Entities", analytics.entity_count],
+    ["Actions", analytics.action_count],
+    ["Urgent", analytics.urgent_count],
+  ];
+
+  return (
+    <View style={styles.statGrid}>
+      {stats.map(([label, value]) => (
+        <View
+          key={String(label)}
+          style={[styles.statTile, { backgroundColor: theme.backgroundDefault }]}
+        >
+          <ThemedText type="h4">{value}</ThemedText>
+          <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+            {label}
+          </ThemedText>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function SentimentCard({ sentiment }: { sentiment: SentimentInsight }) {
+  const { theme } = useTheme();
+  return (
+    <Card style={styles.summaryCard}>
+      <View style={styles.summaryHeader}>
+        <Feather name="activity" size={20} color={theme.primary} />
+        <ThemedText type="h4">Sentiment</ThemedText>
+      </View>
+      <ThemedText type="body" style={{ textTransform: "capitalize" }}>
+        {sentiment.label} ({sentiment.score})
+      </ThemedText>
+      <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+        Positive {sentiment.positive_count} · Negative {sentiment.negative_count} · Neutral {sentiment.neutral_count}
+      </ThemedText>
+    </Card>
+  );
+}
+
+function TopicCard({ topic }: { topic: TopicInsight }) {
+  const { theme } = useTheme();
+  return (
+    <View
+      style={[
+        styles.itemCard,
+        { backgroundColor: theme.backgroundDefault, borderLeftColor: theme.primary },
+      ]}
+    >
+      <ThemedText type="body" style={{ fontWeight: "600" }}>
+        {topic.title}
+      </ThemedText>
+      <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+        {topic.message_count} messages · {topic.senders.join(", ")}
+      </ThemedText>
+      {topic.keywords.length > 0 ? (
+        <ThemedText type="small" style={{ color: theme.textSecondary }}>
+          {topic.keywords.join(", ")}
+        </ThemedText>
+      ) : null}
+    </View>
+  );
+}
+
+function EntityCard({ entity }: { entity: EntityInsight }) {
+  const { theme } = useTheme();
+  return (
+    <View
+      style={[
+        styles.itemCard,
+        {
+          backgroundColor: theme.backgroundDefault,
+          borderLeftColor: theme.categoryBusiness,
+        },
+      ]}
+    >
+      <ThemedText type="body" style={{ fontWeight: "600" }}>
+        {entity.text}
+      </ThemedText>
+      <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+        {entity.type} · {entity.count}
+      </ThemedText>
+    </View>
+  );
+}
+
+function TwentyFourHourSummaryCard({
+  summary,
+  onRefresh,
+  loading,
+  error,
+}: {
+  summary?: TwentyFourHourSummary;
+  onRefresh: () => void;
+  loading: boolean;
+  error?: string;
+}) {
+  const { theme } = useTheme();
+  const insights = summary?.insights;
+
+  return (
+    <Card style={styles.summaryCard}>
+      <View style={styles.summaryHeader}>
+        <Feather name="clock" size={20} color={theme.primary} />
+        <ThemedText type="h4">Last 24 hours</ThemedText>
+        <Pressable
+          onPress={onRefresh}
+          disabled={loading}
+          style={[styles.refreshBtn, { borderColor: theme.primary }]}
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color={theme.primary} />
+          ) : (
+            <Feather name="refresh-cw" size={16} color={theme.primary} />
+          )}
+        </Pressable>
+      </View>
+
+      {error ? (
+        <ThemedText type="body" style={{ color: theme.categoryImportant }}>
+          {error}
+        </ThemedText>
+      ) : null}
+
+      {summary ? (
+        <>
+          <ThemedText type="body" style={{ color: theme.textSecondary, marginBottom: Spacing.md }}>
+            {summary.summary}
+          </ThemedText>
+          <ThemedText type="caption" style={{ color: theme.textSecondary, marginBottom: Spacing.md }}>
+            Based on {summary.messageCount} message{summary.messageCount === 1 ? "" : "s"} · Sentiment: {insights?.sentiment ?? "Neutral"}
+          </ThemedText>
+          {insights?.keyDecisions?.length ? (
+            <>
+              <ThemedText type="small" style={{ fontWeight: "600", marginBottom: Spacing.xs }}>
+                Key decisions
+              </ThemedText>
+              <BulletList items={insights.keyDecisions} />
+            </>
+          ) : null}
+          {insights?.assignedTasks?.length ? (
+            <>
+              <ThemedText type="small" style={{ fontWeight: "600", marginTop: Spacing.sm, marginBottom: Spacing.xs }}>
+                Assigned tasks
+              </ThemedText>
+              <BulletList items={insights.assignedTasks} />
+            </>
+          ) : null}
+          {insights?.pendingActions?.length ? (
+            <>
+              <ThemedText type="small" style={{ fontWeight: "600", marginTop: Spacing.sm, marginBottom: Spacing.xs }}>
+                Pending actions
+              </ThemedText>
+              <BulletList items={insights.pendingActions} />
+            </>
+          ) : null}
+          {insights?.blockers?.length ? (
+            <>
+              <ThemedText type="small" style={{ fontWeight: "600", marginTop: Spacing.sm, marginBottom: Spacing.xs }}>
+                Blockers & risks
+              </ThemedText>
+              <BulletList items={insights.blockers} />
+            </>
+          ) : null}
+          {insights?.peopleMentioned?.length ? (
+            <>
+              <ThemedText type="small" style={{ fontWeight: "600", marginTop: Spacing.sm, marginBottom: Spacing.xs }}>
+                People mentioned
+              </ThemedText>
+              <BulletList items={insights.peopleMentioned} />
+            </>
+          ) : null}
+        </>
+      ) : !loading && !error ? (
+        <ThemedText type="body" style={{ color: theme.textSecondary }}>
+          Tap refresh to generate an executive summary of the last 24 hours.
+        </ThemedText>
+      ) : null}
+    </Card>
+  );
+}
+
+function MetadataCard({ metadata }: { metadata: MetadataInsight }) {
+  const { theme } = useTheme();
+  const lines = [
+    `Chat: ${metadata.chat_name || "Untitled"}`,
+    `Type: ${metadata.chat_type}`,
+    `Current user: ${metadata.current_user}`,
+    `Participants: ${metadata.participants.join(", ") || "None"}`,
+    `Processed: ${metadata.processed_at ? new Date(metadata.processed_at).toLocaleString() : "Unknown"}`,
+    `Pipeline: ${metadata.pipeline_version || "Unknown"}`,
+  ];
+
+  return (
+    <Card style={styles.summaryCard}>
+      <View style={styles.summaryHeader}>
+        <Feather name="info" size={20} color={theme.primary} />
+        <ThemedText type="h4">Metadata</ThemedText>
+      </View>
+      <BulletList items={lines} />
+    </Card>
+  );
+}
+
 export default function ChatAnalysisScreen() {
   const screen = useStackScreenInsets();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<DashboardRouteProp>();
   const { theme } = useTheme();
-  const { getChatById } = useChats();
+  const { getChatById, isLoading, updateChat } = useChats();
   const [currentUser, setCurrentUser] = useState("Me");
-  const [previewExpanded, setPreviewExpanded] = useState(true);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | undefined>();
+  const [activeTab, setActiveTab] = useState("Overview");
+
+  const INSIGHT_TABS = ["Overview", "Priorities", "Actions", "Chat"];
 
   useEffect(() => {
     AsyncStorage.getItem("@ConvoInsight_whatsAppName").then((name) => {
@@ -260,6 +485,14 @@ export default function ChatAnalysisScreen() {
   }, []);
 
   const chat = getChatById(route.params.chatId);
+
+  if (isLoading) {
+    return (
+      <ThemedView style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" color={theme.primary} />
+      </ThemedView>
+    );
+  }
 
   if (!chat) {
     return (
@@ -279,6 +512,11 @@ export default function ChatAnalysisScreen() {
     importantMessages,
     priorities = EMPTY_PRIORITIES,
     conversationSummary,
+    entities,
+    topics,
+    sentiment,
+    analytics,
+    metadata,
   } = chat.extractedData;
 
   const themes = conversationSummary?.themes ?? [];
@@ -286,6 +524,36 @@ export default function ChatAnalysisScreen() {
 
   const isOutgoing = (sender: string) =>
     sender.trim().toLowerCase() === currentUser.trim().toLowerCase();
+
+  const fetchTwentyFourHourSummary = async () => {
+    if (!chat) return;
+    const chatId = chat.jobId || chat.id;
+    setSummaryLoading(true);
+    setSummaryError(undefined);
+    try {
+      const chatType =
+        chat.extractedData.metadata?.chat_type === "group" ? "group" : "individual";
+      const result = await summarizeChat24h({ chatId, chatType });
+      const payload: TwentyFourHourSummary = {
+        summary: result.summary,
+        insights: result.insights ?? {
+          keyDecisions: [],
+          assignedTasks: [],
+          pendingActions: [],
+          blockers: [],
+          peopleMentioned: [],
+          sentiment: "Neutral",
+        },
+        messageCount: result.messageCount ?? 0,
+        generatedAt: new Date().toISOString(),
+      };
+      await updateChat(chat.id, { twentyFourHourSummary: payload });
+    } catch (err) {
+      setSummaryError(err instanceof Error ? err.message : "Could not load summary");
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
 
   return (
     <ThemedView style={styles.container}>
@@ -298,19 +566,46 @@ export default function ChatAnalysisScreen() {
         }}
         scrollIndicatorInsets={{ bottom: screen.scrollIndicatorBottom }}
       >
-        <View style={styles.header}>
+        <Surface style={styles.headerCard} elevated>
           <View style={styles.headerTop}>
-            <ThemedText type="h3" style={{ flex: 1 }}>
+            <ThemedText type="h3" style={{ flex: 1 }} numberOfLines={2}>
               {chat.name}
             </ThemedText>
             <CategoryBadge category={chat.category} />
           </View>
           <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-            Analyzed {new Date(chat.analyzedAt).toLocaleString()}
+            Analyzed {new Date(chat.analyzedAt).toLocaleString()} · {analytics.total_messages} messages
           </ThemedText>
-        </View>
+        </Surface>
 
-        <PriorityDashboardCards priorities={priorities as PrioritiesBucket} />
+        <SegmentedControl
+          options={INSIGHT_TABS}
+          selected={activeTab}
+          onSelect={setActiveTab}
+        />
+
+        {(activeTab === "Overview" || activeTab === "Priorities") ? (
+          <PriorityDashboardCards priorities={priorities as PrioritiesBucket} />
+        ) : null}
+
+        {activeTab === "Overview" ? (
+        <>
+        <Card style={styles.summaryCard}>
+          <View style={styles.summaryHeader}>
+            <Feather name="bar-chart-2" size={20} color={theme.primary} />
+            <ThemedText type="h4">Analytics</ThemedText>
+          </View>
+          <StatGrid analytics={analytics} />
+        </Card>
+
+        <SentimentCard sentiment={sentiment} />
+
+        <TwentyFourHourSummaryCard
+          summary={chat.twentyFourHourSummary}
+          onRefresh={fetchTwentyFourHourSummary}
+          loading={summaryLoading}
+          error={summaryError}
+        />
 
         {chat.summary ? (
           <Card style={styles.summaryCard}>
@@ -343,29 +638,37 @@ export default function ChatAnalysisScreen() {
             <BulletList items={keyDecisions} />
           </Card>
         ) : null}
+        </>
+        ) : null}
 
+        {activeTab === "Priorities" ? (
+        <>
         <PrioritySection
           title="Urgent"
           level="urgent"
           items={priorities.urgent}
           icon="alert-circle"
-          color="#D32F2F"
+          color={theme.priorityUrgent}
         />
         <PrioritySection
           title="Moderate"
           level="moderate"
           items={priorities.moderate}
           icon="alert-triangle"
-          color="#F9A825"
+          color={theme.priorityModerate}
         />
         <PrioritySection
           title="Low priority"
           level="low"
           items={priorities.low}
           icon="check-circle"
-          color="#43A047"
+          color={theme.priorityLow}
         />
+        </>
+        ) : null}
 
+        {activeTab === "Actions" ? (
+        <>
         <CollapsibleSection
           title="Action items"
           icon="check-square"
@@ -377,47 +680,27 @@ export default function ChatAnalysisScreen() {
           ))}
         </CollapsibleSection>
 
-        {chat.messages.length > 0 ? (
-          <View style={styles.section}>
-            <Pressable
-              style={styles.sectionHeader}
-              onPress={() => setPreviewExpanded(!previewExpanded)}
-            >
-              <View style={styles.sectionHeaderLeft}>
-                <Feather name="message-circle" size={20} color={theme.primary} />
-                <ThemedText type="h4">Chat preview</ThemedText>
-                <View
-                  style={[styles.countBadge, { backgroundColor: theme.primary }]}
-                >
-                  <ThemedText type="caption" style={{ color: "#FFFFFF" }}>
-                    {Math.min(chat.messages.length, 50)}
-                  </ThemedText>
-                </View>
-              </View>
-              <Feather
-                name={previewExpanded ? "chevron-up" : "chevron-down"}
-                size={20}
-                color={theme.textSecondary}
-              />
-            </Pressable>
-            {previewExpanded ? (
-              <View
-                style={[
-                  styles.chatPreview,
-                  { backgroundColor: theme.backgroundSecondary },
-                ]}
-              >
-                {chat.messages.slice(0, 50).map((msg: Message) => (
-                  <ChatBubble
-                    key={msg.id}
-                    message={msg}
-                    isOutgoing={isOutgoing(msg.sender)}
-                  />
-                ))}
-              </View>
-            ) : null}
-          </View>
-        ) : null}
+        <CollapsibleSection
+          title="Topics"
+          icon="hash"
+          count={topics.length}
+          defaultExpanded={false}
+        >
+          {topics.map((topic) => (
+            <TopicCard key={topic.id} topic={topic} />
+          ))}
+        </CollapsibleSection>
+
+        <CollapsibleSection
+          title="Entities"
+          icon="tag"
+          count={entities.length}
+          defaultExpanded={false}
+        >
+          {entities.map((entity, index) => (
+            <EntityCard key={`${entity.type}-${entity.text}-${index}`} entity={entity} />
+          ))}
+        </CollapsibleSection>
 
         <CollapsibleSection
           title="Business orders"
@@ -451,15 +734,46 @@ export default function ChatAnalysisScreen() {
             <ImportantMessageCard key={index} message={message} />
           ))}
         </CollapsibleSection>
+        </>
+        ) : null}
 
-        <Pressable
-          style={[styles.doneButton, { backgroundColor: theme.primary }]}
+        {activeTab === "Chat" ? (
+        <>
+        {chat.messages.length > 0 ? (
+          <View style={styles.section}>
+            <View
+              style={[
+                styles.chatPreview,
+                { backgroundColor: theme.chatWallpaper },
+              ]}
+            >
+              {chat.messages.slice(0, 50).map((msg: Message) => (
+                <ChatBubble
+                  key={msg.id}
+                  message={msg}
+                  isOutgoing={isOutgoing(msg.sender)}
+                />
+              ))}
+            </View>
+          </View>
+        ) : (
+          <Card style={styles.summaryCard}>
+            <ThemedText type="body" style={{ color: theme.textSecondary }}>
+              No message preview available for this chat.
+            </ThemedText>
+          </Card>
+        )}
+        <MetadataCard metadata={metadata} />
+        </>
+        ) : null}
+
+        <Button
+          variant="secondary"
           onPress={() => navigation.reset({ index: 0, routes: [{ name: "Main" }] })}
+          style={{ marginBottom: Spacing.xl }}
         >
-          <ThemedText type="body" style={{ color: "#FFFFFF", fontWeight: "600" }}>
-            View all chats
-          </ThemedText>
-        </Pressable>
+          Back to app
+        </Button>
       </ScrollView>
     </ThemedView>
   );
@@ -472,6 +786,9 @@ const styles = StyleSheet.create({
   center: {
     alignItems: "center",
     justifyContent: "center",
+  },
+  headerCard: {
+    marginBottom: Spacing.md,
   },
   header: {
     marginBottom: Spacing.lg,
@@ -492,6 +809,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: Spacing.sm,
     marginBottom: Spacing.md,
+  },
+  refreshBtn: {
+    marginLeft: "auto",
+    padding: Spacing.xs,
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
   },
   section: {
     marginBottom: Spacing.xl,
@@ -548,6 +871,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: Spacing.sm,
     alignItems: "flex-start",
+  },
+  statGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+  },
+  statTile: {
+    width: "31%",
+    minWidth: 92,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.sm,
   },
   doneButton: {
     padding: Spacing.lg,

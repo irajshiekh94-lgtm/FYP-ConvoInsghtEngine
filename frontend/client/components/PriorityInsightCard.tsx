@@ -2,16 +2,11 @@ import React from "react";
 import { View, StyleSheet } from "react-native";
 
 import { ThemedText } from "@/components/ThemedText";
+import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import type { PriorityInsight } from "@/types";
 
 export type PriorityLevel = "urgent" | "moderate" | "low";
-
-const LEVEL_COLORS: Record<PriorityLevel, string> = {
-  urgent: "#D32F2F",
-  moderate: "#F9A825",
-  low: "#43A047",
-};
 
 const LEVEL_LABELS: Record<PriorityLevel, string> = {
   urgent: "Urgent",
@@ -25,7 +20,13 @@ interface PriorityInsightCardProps {
 }
 
 export function PriorityInsightCard({ item, level }: PriorityInsightCardProps) {
-  const accent = LEVEL_COLORS[level];
+  const { theme } = useTheme();
+  const accent =
+    level === "urgent"
+      ? theme.priorityUrgent
+      : level === "moderate"
+        ? theme.priorityModerate
+        : theme.priorityLow;
 
   return (
     <View
@@ -39,7 +40,7 @@ export function PriorityInsightCard({ item, level }: PriorityInsightCardProps) {
           {item.sender}
         </ThemedText>
         <View style={[styles.badge, { backgroundColor: accent }]}>
-          <ThemedText type="caption" style={{ color: "#FFFFFF" }}>
+          <ThemedText type="caption" style={{ color: theme.onAccent }}>
             {LEVEL_LABELS[level]}
           </ThemedText>
         </View>

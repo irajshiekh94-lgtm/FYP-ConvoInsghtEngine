@@ -16,8 +16,11 @@ import type {
   ActionItemOut,
 } from "@/lib/analysis-schema";
 import {
+  EMPTY_ANALYTICS,
   EMPTY_CONVERSATION_SUMMARY,
+  EMPTY_METADATA,
   EMPTY_PRIORITIES,
+  EMPTY_SENTIMENT,
 } from "@/lib/analysis-schema";
 
 export type { AnalysisResult, JobResultResponse } from "@/lib/analysis-schema";
@@ -43,6 +46,11 @@ export interface BackendUploadResponse {
   conversation_summary?: ConversationSummary;
   priorities?: PrioritiesBucket;
   actions?: ActionItemOut[];
+  entities?: AnalysisResult["entities"];
+  topics?: AnalysisResult["topics"];
+  sentiment?: AnalysisResult["sentiment"];
+  analytics?: AnalysisResult["analytics"];
+  metadata?: AnalysisResult["metadata"];
   error?: string;
 }
 
@@ -163,6 +171,7 @@ export function transformAnalysisResult(
 
   return {
     id: chatId,
+    jobId: chatId,
     name: chatName,
     category: inferCategory(priorities),
     analyzedAt: now,
@@ -185,6 +194,11 @@ export function transformAnalysisResult(
       senderInsights,
       priorities,
       conversationSummary,
+      entities: result.entities || [],
+      topics: result.topics || [],
+      sentiment: result.sentiment || EMPTY_SENTIMENT,
+      analytics: result.analytics || EMPTY_ANALYTICS,
+      metadata: result.metadata || EMPTY_METADATA,
     },
   };
 }
@@ -204,4 +218,10 @@ export function transformJobResultToChat(
   );
 }
 
-export { EMPTY_PRIORITIES, EMPTY_CONVERSATION_SUMMARY };
+export {
+  EMPTY_ANALYTICS,
+  EMPTY_METADATA,
+  EMPTY_PRIORITIES,
+  EMPTY_CONVERSATION_SUMMARY,
+  EMPTY_SENTIMENT,
+};

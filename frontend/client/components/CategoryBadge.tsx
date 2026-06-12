@@ -42,7 +42,11 @@ export function CategoryBadge({ category, size = "default" }: CategoryBadgeProps
     >
       <ThemedText
         type="caption"
-        style={[styles.text, isSmall && styles.smallText]}
+        style={[
+          styles.text,
+          { color: theme.onAccent },
+          isSmall && styles.smallText,
+        ]}
       >
         {category.charAt(0).toUpperCase() + category.slice(1)}
       </ThemedText>
@@ -55,7 +59,6 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
   },
   text: {
-    color: "#FFFFFF",
     fontWeight: "500",
   },
   smallText: {

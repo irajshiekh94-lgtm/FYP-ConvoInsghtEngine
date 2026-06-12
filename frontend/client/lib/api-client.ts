@@ -1,4 +1,15 @@
 import { getApiUrl } from "./query-client";
+
+function wrapNetworkError(error: unknown, url: string): Error {
+  if (error instanceof TypeError && /network request failed/i.test(error.message)) {
+    return new Error(
+      `Cannot reach the API at ${url}. ` +
+        "Start the backend (uvicorn on port 8000) and set EXPO_PUBLIC_API_URL in frontend/.env " +
+        "to your Mac's LAN IP when using a physical device (not 127.0.0.1)."
+    );
+  }
+  return error instanceof Error ? error : new Error(String(error));
+}
 import type {
   AnalysisResult,
   JobResultResponse,
@@ -139,16 +150,22 @@ export async function uploadChat(payload: {
   chatName: string;
 }): Promise<JobUploadResponse> {
   const baseUrl = getApiUrl();
-  const res = await fetch(new URL("/api/upload-chat", baseUrl).href, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      rawText: payload.rawText,
-      currentUser: payload.currentUser ?? "Me",
-      chatName: payload.chatName,
-    }),
-    credentials: "include",
-  });
+  const url = new URL("/api/upload-chat", baseUrl).href;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rawText: payload.rawText,
+        currentUser: payload.currentUser ?? "Me",
+        chatName: payload.chatName,
+      }),
+      credentials: "include",
+    });
+  } catch (error) {
+    throw wrapNetworkError(error, url);
+  }
   if (!res.ok) {
     await handleApiError(res);
   }
@@ -159,17 +176,23 @@ export async function uploadChat(payload: {
 /** Step 2 — run analysis pipeline (status: processing → done | failed). */
 export async function processChat(jobId: string): Promise<JobResultResponse> {
   const baseUrl = getApiUrl();
-  const res = await fetch(new URL("/api/process-chat", baseUrl).href, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jobId }),
-    credentials: "include",
-  });
+  const url = new URL("/api/process-chat", baseUrl).href;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId }),
+      credentials: "include",
+    });
+  } catch (error) {
+    throw wrapNetworkError(error, url);
+  }
   if (!res.ok) {
     await handleApiError(res);
   }
   const data: JobResultResponse = await res.json();
-  if (data.status === "failed") {
+  if (data.status === "failed" && !data.result) {
     throw new Error(data.error || "Analysis failed");
   }
   return data;
@@ -265,6 +288,81 @@ export async function transcribeVoiceNoteFile(
  * 
  * @returns Health status of the API
  */
+export interface SummaryInsights {
+  keyDecisions: string[];
+  assignedTasks: string[];
+  pendingActions: string[];
+  blockers: string[];
+  peopleMentioned: string[];
+  sentiment: "Positive" | "Neutral" | "Negative";
+}
+
+export interface SummarizeMessageItem {
+  senderName: string;
+  messageText: string;
+  timestamp: string;
+}
+
+export interface SummarizeResponse {
+  success: boolean;
+  summary: string;
+  insights?: SummaryInsights;
+  messageCount?: number;
+  period?: "24h" | "conversation_tail" | "recent" | "client";
+  error?: string;
+}
+
+export interface LlamaTestResponse {
+  success: boolean;
+  status: string;
+  message: string;
+  model?: string;
+  provider?: string;
+  sample_response?: string;
+}
+
+/** @deprecated use LlamaTestResponse */
+export type GeminiTestResponse = LlamaTestResponse;
+
+/** Test Meta Llama connectivity (Ollama / Groq / Together). */
+export async function testLlamaConnection(): Promise<LlamaTestResponse> {
+  const baseUrl = getApiUrl();
+  const res = await fetch(new URL("/api/llama/test", baseUrl).href, {
+    credentials: "include",
+  });
+  if (!res.ok) {
+    await handleApiError(res);
+  }
+  return res.json();
+}
+
+/** @deprecated use testLlamaConnection */
+export const testGeminiConnection = testLlamaConnection;
+
+/** Generate an executive summary (24h when available, else most recent messages). */
+export async function summarizeChat24h(payload: {
+  chatId: string;
+  chatType?: "individual" | "group";
+  messages?: SummarizeMessageItem[];
+  maxMessages?: number;
+}): Promise<SummarizeResponse> {
+  const baseUrl = getApiUrl();
+  const res = await fetch(new URL("/api/summarize/", baseUrl).href, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    credentials: "include",
+  });
+  if (!res.ok) {
+    await handleApiError(res);
+  }
+  const data: SummarizeResponse = await res.json();
+  if (!data.success) {
+    throw new Error(data.error || "Summarization failed");
+  }
+  return data;
+}
+
 export async function getHealth(): Promise<any> {
   const baseUrl = getApiUrl();
   

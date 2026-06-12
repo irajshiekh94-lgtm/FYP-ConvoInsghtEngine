@@ -30,13 +30,13 @@ class MongoDB:
                 if not mongodb_uri:
                     raise ValueError("MONGODB_URI is not set in .env file")
 
-                # ✅ FIX: Atlas requires TLS + CA certificate
-                self._client = MongoClient(
-                    mongodb_uri,
-                    tls=True,
-                    tlsCAFile=certifi.where(),
-                    serverSelectionTimeoutMS=30000
-                )
+                # Atlas (mongodb+srv) requires TLS; local mongodb:// does not
+                client_kwargs: dict = {"serverSelectionTimeoutMS": 30000}
+                if mongodb_uri.startswith("mongodb+srv://") or "mongodb.net" in mongodb_uri:
+                    client_kwargs["tls"] = True
+                    client_kwargs["tlsCAFile"] = certifi.where()
+
+                self._client = MongoClient(mongodb_uri, **client_kwargs)
 
                 # Test connection
                 self._client.admin.command('ping')

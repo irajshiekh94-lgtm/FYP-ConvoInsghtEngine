@@ -4,10 +4,10 @@
     "slug": "ConvoInsight",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/ConvoInsightLogo.png",
     "scheme": "convoinsight",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ConvoInsight.app",
@@ -19,28 +19,33 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#25D366",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#000000",
+        "foregroundImage": "./assets/images/ConvoInsightLogo.png"
       },
       "package": "com.ConvoInsight.app"
     },
     "web": {
       "output": "single",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/ConvoInsightLogo.png"
     },
     "plugins": [
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
+          "image": "./assets/images/ConvoInsightLogo.png",
+          "imageWidth": 280,
           "resizeMode": "contain",
-          "backgroundColor": "#25D366",
+          "backgroundColor": "#000000",
           "dark": {
-            "backgroundColor": "#0B141A"
+            "backgroundColor": "#000000"
           }
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/ConvoInsightLogo.png",
+          "color": "#008069"
         }
       ],
       "expo-asset",

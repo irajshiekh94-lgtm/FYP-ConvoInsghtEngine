@@ -21,6 +21,10 @@ def shape_clusters(raw_clusters: list) -> list:
 
         normalised_parts = [m["content"] for m in text_msgs]
         combined = " ".join(normalised_parts)
+        messages = [
+            {"sender": m.get("sender", "Unknown"), "content": m["content"]}
+            for m in text_msgs
+        ]
 
         shaped.append(
             {
@@ -28,6 +32,7 @@ def shape_clusters(raw_clusters: list) -> list:
                 "senders": senders,
                 "message_count": len(cluster),
                 "combined_text": combined,
+                "messages": messages,
             }
         )
     return shaped

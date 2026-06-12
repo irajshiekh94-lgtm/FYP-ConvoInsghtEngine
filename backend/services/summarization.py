@@ -1,10 +1,9 @@
 """
 Abstractive Summarization Service - ConvoInsight
-Uses Gemini to summarise clustered WhatsApp messages.
+Uses Meta Llama (Ollama / Groq / Together) to summarise clustered WhatsApp messages.
 """
 
 import os
-import time
 import logging
 from typing import Optional
 
@@ -20,11 +19,11 @@ except Exception:
     HF_AVAILABLE = False
 
 try:
-    import google.generativeai as genai
-    GENAI_AVAILABLE = True
-except ImportError:
-    genai = None  # type: ignore
-    GENAI_AVAILABLE = False
+    from backend.services.llama_service import LlamaServiceError, llama_service
+    LLAMA_AVAILABLE = True
+except Exception:
+    llama_service = None  # type: ignore
+    LLAMA_AVAILABLE = False
 
 
 def _rule_based_summary(cluster_data: dict) -> str:
@@ -41,42 +40,27 @@ def _rule_based_summary(cluster_data: dict) -> str:
 class SummarizationService:
 
     def __init__(self):
-        # Choose summarizer: local HF model if requested or if GEMINI not configured.
-        self.prefer_local = os.getenv("PREFER_LOCAL_SUMMARIZER", "1").lower() not in ("0", "false", "no")
         self.local_model_name = os.getenv("LOCAL_SUMMARIZER_MODEL", "sshleifer/distilbart-cnn-12-6")
         self.local_pipeline: Optional[object] = None
+        self.llama_available = LLAMA_AVAILABLE and llama_service is not None and llama_service.available
 
-        api_key = os.getenv("GEMINI_API_KEY")
-        self.gemini_available = GENAI_AVAILABLE and bool(api_key)
+        prefer_local_env = os.getenv("PREFER_LOCAL_SUMMARIZER")
+        if prefer_local_env is None:
+            self.prefer_local = not self.llama_available
+        else:
+            self.prefer_local = prefer_local_env.lower() not in ("0", "false", "no")
 
-        # Configure Gemini if available
-        if self.gemini_available:
-            try:
-                genai.configure(api_key=api_key)
-                self.model = genai.GenerativeModel("models/gemini-2.5-flash")
-            except Exception as e:
-                logger.warning("Could not configure Gemini: %s", e)
-                self.gemini_available = False
-
-        # If we prefer local and HF is available, keep pipeline lazy-loaded
         if self.prefer_local and not HF_AVAILABLE:
-            logger.warning("PREFER_LOCAL_SUMMARIZER requested but transformers not available; falling back to Gemini if configured")
+            logger.warning(
+                "PREFER_LOCAL_SUMMARIZER requested but transformers not available; "
+                "falling back to Llama if configured"
+            )
 
     def summarize_cluster(self, cluster_data: dict) -> str:
-        """
-        Generate an abstractive summary for one cluster.
-
-        cluster_data must contain:
-            - senders       : list[str]
-            - message_count : int
-            - combined_text : str
-        """
-        # Safety guard — nothing to summarise
         if not cluster_data.get("combined_text", "").strip():
             return "No content to summarise."
 
         topic_text = cluster_data["combined_text"][:1500]
-
         prompt = f"""You summarize ONE topic thread from a WhatsApp chat (already grouped by topic).
 
 Participants in this thread: {', '.join(cluster_data['senders'])}
@@ -96,14 +80,6 @@ Rules:
 
 Summary:"""
 
-        # Global in-process cooldown to avoid repeated Gemini 429s
-        cooldown_sec = int(os.getenv("GEMINI_COOLDOWN_SECONDS", "30"))
-        global _gemini_disabled_until
-        if "_gemini_disabled_until" in globals() and time.time() < _gemini_disabled_until:
-            logger.warning("SummarizationService: using rule-based fallback (in cooldown)")
-            return _rule_based_summary(cluster_data)
-
-        # If local summarizer is preferred and available, use it (lazy load pipeline)
         use_local = self.prefer_local and HF_AVAILABLE
         if use_local:
             try:
@@ -113,52 +89,20 @@ Summary:"""
                 out = self.local_pipeline(topic_text, max_length=120, min_length=8)
                 if out and isinstance(out, list) and "summary_text" in out[0]:
                     return out[0]["summary_text"].strip()
-                # transformers may return {'summary_text'} or {'generated_text'} depending on version
                 if out and isinstance(out, list) and "generated_text" in out[0]:
                     return out[0]["generated_text"].strip()
             except Exception as e:
                 logger.error("Local summarizer failed: %s", e)
-                # fall through to Gemini if available, otherwise fallback
 
-        # If Gemini is available, try it and apply cooldown on quota errors
-        if self.gemini_available:
+        if self.llama_available and llama_service is not None:
             try:
-                response = self.model.generate_content(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.3,
-                        top_p=0.85,
-                        max_output_tokens=120,
-                    ),
-                )
-                return response.text.strip()
-            except Exception as e:
-                msg = str(e).lower()
-                logger.error("[SummarizationService] Error: %s", e)
-                if "429" in msg or "quota" in msg or "rate" in msg:
-                    _gemini_disabled_until = time.time() + cooldown_sec
-                    logger.warning("SummarizationService: Gemini rate-limited — entering cooldown for %s seconds", cooldown_sec)
+                return llama_service.generate(prompt, max_tokens=120, temperature=0.3).strip()
+            except LlamaServiceError as e:
+                logger.error("[SummarizationService] Llama error: %s", e)
 
-        # Final fallback: rule-based summary
         return _rule_based_summary(cluster_data)
 
     def summarize_by_sender(self, clusters: list, current_user: str) -> dict:
-        """
-        Summarise all clusters, grouped by sender (excluding current_user).
-
-        Args:
-            clusters    : list of shaped cluster dicts
-                          [{cluster_id, senders, combined_text, message_count}]
-            current_user: sender name to exclude
-
-        Returns:
-            {
-                sender_name: {
-                    'clusters': [{'cluster_id', 'summary', 'message_count', 'intent'}],
-                    'total_messages': int
-                }
-            }
-        """
         sender_summaries: dict = {}
 
         for cluster in clusters:
@@ -166,8 +110,6 @@ Summary:"""
                 continue
 
             sender = cluster["senders"][0]
-
-            # Skip current user's own messages
             if sender == current_user:
                 continue
 
@@ -175,11 +117,12 @@ Summary:"""
                 sender_summaries[sender] = {"clusters": [], "total_messages": 0}
 
             summary = self.summarize_cluster(cluster)
-
             sender_summaries[sender]["clusters"].append({
                 "cluster_id": cluster["cluster_id"],
                 "summary": summary,
                 "message_count": cluster["message_count"],
+                "messages": cluster.get("messages", []),
+                "original_text": cluster.get("combined_text", ""),
             })
             sender_summaries[sender]["total_messages"] += cluster["message_count"]
 
@@ -187,7 +130,6 @@ Summary:"""
 
     @staticmethod
     def summarize_by_sender_rule_based(clusters: list, current_user: str) -> dict:
-        """Fallback when Gemini is unavailable — topic snippets only."""
         sender_summaries: dict = {}
         for cluster in clusters:
             if not cluster.get("senders"):
@@ -203,6 +145,8 @@ Summary:"""
                     "cluster_id": cluster["cluster_id"],
                     "summary": summary,
                     "message_count": cluster["message_count"],
+                    "messages": cluster.get("messages", []),
+                    "original_text": cluster.get("combined_text", ""),
                 }
             )
             sender_summaries[sender]["total_messages"] += cluster["message_count"]

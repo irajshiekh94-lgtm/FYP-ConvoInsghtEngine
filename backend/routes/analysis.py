@@ -7,7 +7,7 @@ import traceback
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from backend.schemas.analysis import (
     AnalysisResult,
@@ -68,10 +68,36 @@ async def upload_chat(body: UploadChatRequest):
     )
 
 
+def _run_pipeline_job(job_id: str) -> None:
+    """Background worker — runs the full analysis pipeline for one job."""
+    job = job_store.get(job_id)
+    if not job:
+        logger.error("Background pipeline: job %s not found", job_id)
+        return
+
+    try:
+        _, run_analysis_pipeline = _get_pipeline_helpers()
+        logger.info("Background pipeline started for job %s", job_id)
+        result, meta = run_analysis_pipeline(
+            raw_text=job["rawText"],
+            chat_name=job["chatName"],
+            current_user=job["currentUser"],
+        )
+        job_store.set_result(job_id, result, meta)
+        _persist_messages_to_mongo(job_id, job, result, meta)
+        logger.info("Background pipeline completed for job %s", job_id)
+    except Exception as exc:
+        logger.error("Process failed for %s: %s", job_id, exc)
+        logger.error(traceback.format_exc())
+        job_store.set_status(job_id, ProcessingStatus.FAILED, error=str(exc))
+
+
 @router.post("/process-chat", response_model=JobResultResponse)
-async def process_chat(body: ProcessChatRequest):
+async def process_chat(body: ProcessChatRequest, background_tasks: BackgroundTasks):
     """
-    Step 2 — Run parse → cluster → summarize → classify → priorities → actions.
+    Step 2 — Start parse → cluster → summarize → classify → priorities → actions.
+
+    Returns immediately with status ``processing``. Poll ``GET /api/get-results/{id}``.
     """
     job = job_store.get(body.jobId)
     if not job:
@@ -81,29 +107,13 @@ async def process_chat(body: ProcessChatRequest):
     if status in (ProcessingStatus.DONE.value, ProcessingStatus.DONE) and job.get("result"):
         return _build_result_response(job)
 
-    job_store.set_status(body.jobId, ProcessingStatus.PROCESSING)
-
-    try:
-        _, run_analysis_pipeline = _get_pipeline_helpers()
-        result, meta = run_analysis_pipeline(
-            raw_text=job["rawText"],
-            chat_name=job["chatName"],
-            current_user=job["currentUser"],
-        )
-        job_store.set_result(body.jobId, result, meta)
-        job = job_store.get(body.jobId)
+    if status in (ProcessingStatus.PROCESSING.value, ProcessingStatus.PROCESSING):
         return _build_result_response(job)
 
-    except Exception as exc:
-        logger.error("Process failed for %s: %s", body.jobId, exc)
-        logger.error(traceback.format_exc())
-        job_store.set_status(body.jobId, ProcessingStatus.FAILED, error=str(exc))
-        return JobResultResponse(
-            id=body.jobId,
-            status=ProcessingStatus.FAILED,
-            chat_name=job.get("chatName"),
-            error=str(exc),
-        )
+    job_store.set_status(body.jobId, ProcessingStatus.PROCESSING)
+    background_tasks.add_task(_run_pipeline_job, body.jobId)
+    job = job_store.get(body.jobId)
+    return _build_result_response(job)
 
 
 @router.get("/get-results/{job_id}", response_model=JobResultResponse)
@@ -116,6 +126,30 @@ async def get_results(job_id: str):
         _error_response(404, "not_found", f"Job {job_id} not found", job_id=job_id)
 
     return _build_result_response(job)
+
+
+def _persist_messages_to_mongo(job_id: str, job: dict, result, meta: dict) -> None:
+    """Store parsed messages in MongoDB for 24-hour summarization."""
+    try:
+        from backend.services.message_repository import message_repository
+
+        if not message_repository.available:
+            return
+        messages = [
+            m.model_dump() if hasattr(m, "model_dump") else m
+            for m in (result.messages if hasattr(result, "messages") else [])
+        ]
+        message_repository.persist_pipeline_result(
+            chat_id=job_id,
+            chat_name=job.get("chatName") or meta.get("chatName", ""),
+            chat_type=meta.get("chatType", "individual"),
+            participants=meta.get("participants", []),
+            current_user=job.get("currentUser", "Me"),
+            pipeline_messages=messages,
+        )
+        logger.info("Persisted %d messages for job %s", len(messages), job_id)
+    except Exception as exc:
+        logger.warning("Could not persist messages for job %s: %s", job_id, exc)
 
 
 def _build_result_response(job: dict) -> JobResultResponse:

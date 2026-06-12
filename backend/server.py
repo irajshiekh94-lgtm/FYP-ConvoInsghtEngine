@@ -27,6 +27,7 @@ from backend.schemas.analysis import (
 # server can start even if optional dependencies are missing.
 analysis_router = None
 auth_router = None
+summary_router = None
 try:
     from backend.routes.auth import router as auth_router
 except Exception as e:
@@ -36,6 +37,11 @@ try:
     from backend.routes.analysis import router as analysis_router
 except Exception as e:
     logging.getLogger(__name__).warning(f"Analysis routes unavailable: {e}")
+
+try:
+    from backend.routes.summary import router as summary_router
+except Exception as e:
+    logging.getLogger(__name__).warning(f"Summary routes unavailable: {e}")
 
 # Optional ML/audio services — import if available, otherwise continue.
 shape_clusters = None
@@ -130,8 +136,14 @@ else:
 
 if auth_router is not None:
     app.include_router(auth_router)
+    logger.info("✓ Auth routes loaded (/api/auth/send-otp, /api/auth/verify-otp)")
 else:
-    logger.warning("Auth router not included (auth routes unavailable)")
+    logger.warning("Auth router not included (auth routes unavailable — check server logs)")
+
+if summary_router is not None:
+    app.include_router(summary_router)
+else:
+    logger.warning("Summary router not included (summary routes unavailable)")
 
 # ── Service Singletons (audio / legacy paths) ──────────────────────────────────
 clustering_service = None
@@ -154,6 +166,9 @@ class HealthResponse(BaseModel):
     status: str
     message: str
     database: str
+    auth: bool = False
+    users_persisted: bool = False
+    email_configured: bool = False
 
 class TextNormalizeRequest(BaseModel):
     text: str
@@ -206,38 +221,69 @@ async def startup_event():
 
 # ── Helper Functions ───────────────────────────────────────────────────────────
 
-def _serialise_messages(messages: list, chat_id: str) -> list:
-    """Prepare messages for MongoDB insertion, converting datetime to ISO string."""
+def _serialise_messages(messages: list, chat_id: str, chat_type: str = "individual") -> list:
+    """Prepare messages for MongoDB insertion with canonical field names."""
     serialised = []
     for msg in messages:
         m = dict(msg)
-        m["chatId"] = chat_id
-        if isinstance(m.get("timestamp"), datetime):
-            m["timestamp"] = m["timestamp"].isoformat()
-        serialised.append(m)
+        ts = m.get("timestamp")
+        if isinstance(ts, datetime):
+            ts_value = ts
+        elif isinstance(ts, str):
+            try:
+                ts_value = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except ValueError:
+                ts_value = datetime.utcnow()
+        else:
+            ts_value = datetime.utcnow()
+        serialised.append({
+            "senderName": m.get("sender") or m.get("senderName", "Unknown"),
+            "messageText": m.get("content") or m.get("messageText", ""),
+            "timestamp": ts_value,
+            "chatId": chat_id,
+            "chatType": chat_type,
+            "messageType": m.get("messageType", "text"),
+        })
     return serialised
 
 # ── Health Check Endpoint ──────────────────────────────────────────────────────
 
-@app.get("/api/health", response_model=HealthResponse)
-async def health_check():
-    """Check server health and database connectivity."""
+def _health_payload() -> dict:
     db_status = "connected" if mongo_enabled else "offline"
+    users_persisted = False
+    email_configured = False
+    try:
+        from backend.services.user_store import user_store
+
+        users_persisted = user_store.is_persistent
+    except Exception:
+        pass
+    try:
+        from backend.services.email_service import smtp_is_configured
+
+        email_configured = smtp_is_configured()
+    except Exception:
+        pass
     return {
         "status": "ok",
         "message": "ConvoInsight API is running",
-        "database": db_status
+        "database": db_status,
+        "auth": auth_router is not None,
+        "users_persisted": users_persisted,
+        "email_configured": email_configured,
     }
+
+
+@app.get("/api/health", response_model=HealthResponse)
+async def health_check():
+    """Check server health and database connectivity."""
+    return _health_payload()
+
 
 @app.get("/health")
 async def root_health():
     """Alternative health check endpoint (no /api prefix)."""
-    db_status = "connected" if mongo_enabled else "offline"
-    return {
-        "status": "ok",
-        "message": "ConvoInsight API is running",
-        "database": db_status
-    }
+    return _health_payload()
 
 # ── Chat Analysis Endpoints ────────────────────────────────────────────────────
 
@@ -295,25 +341,27 @@ async def upload_chat_legacy(request_data: ChatUploadRequest):
             for m in result.messages
         ]
 
+        chat_id = "local_" + str(datetime.now().timestamp())
         if mongo_enabled and db is not None:
-            chat_doc = {
-                "chatName": meta["chatName"],
-                "chatType": meta["chatType"],
-                "participants": meta["participants"],
-                "totalMessages": meta["messageCount"],
-                "uploadedAt": datetime.now(),
-                "currentUser": request_data.currentUser,
-            }
-            chat_id = str(db["chats"].insert_one(chat_doc).inserted_id)
-            db["messages"].insert_many(_serialise_messages(messages_raw, chat_id))
-            db["summaries"].insert_one({
-                "chatId": chat_id,
-                "summaries": meta.get("sender_summaries"),
-                "analysis": result.model_dump(),
-                "generatedAt": datetime.now(),
-            })
-        else:
-            chat_id = "local_" + str(datetime.now().timestamp())
+            try:
+                from backend.services.message_repository import message_repository
+                chat_id = request_data.chatName.replace(" ", "_") + "_" + str(int(datetime.now().timestamp()))
+                message_repository.persist_pipeline_result(
+                    chat_id=chat_id,
+                    chat_name=meta["chatName"],
+                    chat_type=meta["chatType"],
+                    participants=meta["participants"],
+                    current_user=request_data.currentUser,
+                    pipeline_messages=messages_raw,
+                )
+                db["summaries"].insert_one({
+                    "chatId": chat_id,
+                    "summaries": meta.get("sender_summaries"),
+                    "analysis": result.model_dump(),
+                    "generatedAt": datetime.now(),
+                })
+            except Exception as mongo_exc:
+                logger.warning("MongoDB persist failed (legacy upload): %s", mongo_exc)
 
         flat = flatten_summaries_for_legacy(meta["sender_summaries"])
         summary_items = [SummaryItem(**item) for item in flat]
@@ -585,33 +633,9 @@ async def transcribe_audio_file(
                 logger.warning(f"  ⚠ Could not remove temp file: {e}")
 
 # ── Exception Handlers ─────────────────────────────────────────────────────────
+from backend.middleware.error_handling import register_error_handlers
 
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    logger.error("HTTP %s: %s", exc.status_code, exc.detail)
-    if isinstance(exc.detail, dict) and "error" in exc.detail:
-        payload = {**exc.detail, "status_code": exc.status_code}
-    else:
-        payload = {
-            "error": "request_failed",
-            "detail": str(exc.detail),
-            "status_code": exc.status_code,
-        }
-    return JSONResponse(status_code=exc.status_code, content=payload)
-
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    logger.error("Unhandled exception: %s", exc)
-    logger.error(traceback.format_exc())
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": "internal_server_error",
-            "detail": str(exc),
-            "status_code": 500,
-        },
-    )
+register_error_handlers(app)
 
 # ── Entry Point ────────────────────────────────────────────────────────────────
 
@@ -633,6 +657,10 @@ if __name__ == "__main__":
     print("     POST /api/chats/upload-audio        - Upload and transcribe audio")
     print("     GET  /api/chats                     - List all chats")
     print("     GET  /api/chats/{chat_id}/summaries - Get chat summaries")
+    print("   Summarization:")
+    print("     GET  /api/llama/test                - Test Meta Llama connection")
+    print("     POST /api/messages/                 - Store messages in MongoDB")
+    print("     POST /api/summarize/                - 24h executive summary")
     print("   Text Processing:")
     print("     POST /normalize/text                - Normalize text")
     print("     POST /normalize/text-file           - Normalize text file")

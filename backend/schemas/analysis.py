@@ -55,6 +55,47 @@ class ConversationSummaryOut(BaseModel):
     overview: str = ""
 
 
+class EntityOut(BaseModel):
+    text: str
+    type: str
+    count: int = 1
+
+
+class TopicOut(BaseModel):
+    id: int
+    title: str
+    senders: List[str] = Field(default_factory=list)
+    message_count: int = 0
+    keywords: List[str] = Field(default_factory=list)
+
+
+class SentimentOut(BaseModel):
+    label: str = "neutral"
+    score: float = 0.0
+    positive_count: int = 0
+    negative_count: int = 0
+    neutral_count: int = 0
+
+
+class AnalyticsOut(BaseModel):
+    total_messages: int = 0
+    total_participants: int = 0
+    messages_by_sender: Dict[str, int] = Field(default_factory=dict)
+    action_count: int = 0
+    urgent_count: int = 0
+    topic_count: int = 0
+    entity_count: int = 0
+
+
+class MetadataOut(BaseModel):
+    chat_name: str = ""
+    chat_type: str = "individual"
+    participants: List[str] = Field(default_factory=list)
+    current_user: str = "Me"
+    processed_at: str = ""
+    pipeline_version: str = "2.1"
+
+
 class AnalysisResult(BaseModel):
     """Canonical pipeline output — always this shape when status is done."""
 
@@ -65,6 +106,11 @@ class AnalysisResult(BaseModel):
     )
     priorities: PrioritiesOut = Field(default_factory=PrioritiesOut)
     actions: List[ActionItem] = Field(default_factory=list)
+    entities: List[EntityOut] = Field(default_factory=list)
+    topics: List[TopicOut] = Field(default_factory=list)
+    sentiment: SentimentOut = Field(default_factory=SentimentOut)
+    analytics: AnalyticsOut = Field(default_factory=AnalyticsOut)
+    metadata: MetadataOut = Field(default_factory=MetadataOut)
 
 
 class ApiError(BaseModel):

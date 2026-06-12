@@ -91,12 +91,39 @@ Create `.env` file in project root:
 # MongoDB (optional but recommended)
 MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/convoinsight
 
-# Google API (for Gemini summaries)
-GEMINI_API_KEY=your_api_key_here
+# Meta Llama summarization (pick one provider)
+
+# Option A — Local Ollama (recommended for dev)
+LLAMA_PROVIDER=ollama
+LLAMA_MODEL=llama3.2
+OLLAMA_BASE_URL=http://localhost:11434
+
+# Option B — Groq cloud (fast, free tier available)
+# LLAMA_PROVIDER=groq
+# LLAMA_MODEL=llama-3.3-70b-versatile
+# GROQ_API_KEY=your_groq_api_key
+
+# Option C — Together AI
+# LLAMA_PROVIDER=together
+# LLAMA_MODEL=meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo
+# TOGETHER_API_KEY=your_together_api_key
 
 # Frontend
 EXPO_PUBLIC_DOMAIN=localhost:8000
 ```
+
+### Ollama setup (Option A)
+
+```bash
+# Install from https://ollama.com/download (macOS app or: brew install ollama)
+ollama pull llama3.2
+ollama serve   # or launch the Ollama app — listens on :11434
+
+# Verify backend can reach Llama
+curl http://localhost:8000/api/llama/test
+```
+
+Restart the FastAPI server after changing `.env`.
 
 ## 6. Troubleshooting
 

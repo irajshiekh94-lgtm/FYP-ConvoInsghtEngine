@@ -1,8 +1,9 @@
 """
-Priority classification — maps cluster summaries + intents to urgent / moderate / low.
+Priority classification — maps cluster intent to urgent / moderate / low buckets.
+Displays original message text, not cluster summaries.
 """
 
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from backend.schemas.analysis import PrioritiesOut, PriorityItem
 
@@ -16,7 +17,7 @@ _INTENT_BUCKET = {
     "other": "low",
 }
 
-# Keywords that bump priority up one level
+# Keywords that bump priority up one level (checked on original text)
 _URGENT_KEYWORDS = (
     "urgent",
     "asap",
@@ -36,9 +37,39 @@ def _bump_bucket(bucket: str) -> str:
     return "urgent"
 
 
+def _cluster_bucket(intent: str, original_text: str) -> str:
+    bucket = _INTENT_BUCKET.get(intent, "low")
+    lower = original_text.lower()
+    if any(kw in lower for kw in _URGENT_KEYWORDS):
+        bucket = _bump_bucket(bucket)
+    return bucket
+
+
+def _original_messages(cluster: dict, fallback_sender: str) -> List[Tuple[str, str]]:
+    """Return (sender, content) pairs from cluster — never summarized text."""
+    messages = cluster.get("messages") or []
+    out: List[Tuple[str, str]] = []
+    for msg in messages:
+        content = (msg.get("content") or "").strip()
+        if not content:
+            continue
+        sender = (msg.get("sender") or fallback_sender).strip() or fallback_sender
+        out.append((sender, content))
+
+    if out:
+        return out
+
+    original = (cluster.get("original_text") or "").strip()
+    if original:
+        return [(fallback_sender, original)]
+
+    return []
+
+
 def classify_priorities(sender_summaries: dict) -> PrioritiesOut:
     """
-    Build priority buckets from per-sender summarized clusters (with intent set).
+    Classify original messages into priority buckets using cluster intent.
+    Summary text is used only for skipping empty clusters, not shown in output.
     """
     urgent: List[PriorityItem] = []
     moderate: List[PriorityItem] = []
@@ -51,25 +82,27 @@ def classify_priorities(sender_summaries: dict) -> PrioritiesOut:
                 continue
 
             intent = (cluster.get("intent") or "other").lower()
-            bucket = _INTENT_BUCKET.get(intent, "low")
+            originals = _original_messages(cluster, sender)
+            if not originals:
+                continue
 
-            lower = summary.lower()
-            if any(kw in lower for kw in _URGENT_KEYWORDS):
-                bucket = _bump_bucket(bucket)
+            for msg_sender, content in originals:
+                # Per-message keyword bump
+                msg_bucket = _cluster_bucket(intent, content)
 
-            item = PriorityItem(
-                sender=sender,
-                text=summary,
-                intent=intent,
-                cluster_id=cluster.get("cluster_id"),
-                message_count=cluster.get("message_count", 0),
-            )
+                item = PriorityItem(
+                    sender=msg_sender,
+                    text=content,
+                    intent=intent,
+                    cluster_id=cluster.get("cluster_id"),
+                    message_count=1,
+                )
 
-            if bucket == "urgent":
-                urgent.append(item)
-            elif bucket == "moderate":
-                moderate.append(item)
-            else:
-                low.append(item)
+                if msg_bucket == "urgent":
+                    urgent.append(item)
+                elif msg_bucket == "moderate":
+                    moderate.append(item)
+                else:
+                    low.append(item)
 
     return PrioritiesOut(urgent=urgent, moderate=moderate, low=low)

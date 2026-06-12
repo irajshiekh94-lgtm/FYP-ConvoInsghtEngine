@@ -4,384 +4,322 @@ import {
   FlatList,
   StyleSheet,
   Pressable,
-  TextInput,
-  ScrollView,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
-import { useTabScreenInsets } from "@/hooks/useTabScreenInsets";
-import { useNavigation } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
-import { Card } from "@/components/Card";
+import { WhatsAppHeader } from "@/components/ui/WhatsAppHeader";
+import { SearchBar } from "@/components/ui/SearchBar";
+import { Avatar } from "@/components/ui/Avatar";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing } from "@/constants/theme";
+import { FAB_SIZE, FAB_OFFSET } from "@/constants/layout";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useChats } from "@/hooks/useChats";
-import { CategoryBadge } from "@/components/CategoryBadge";
-import { Chat } from "@/types";
+import { useActions } from "@/hooks/useActions";
+import { summarizeChat } from "@/lib/summarize-chat";
+import { Chat, TwentyFourHourSummary } from "@/types";
+import { getUnreadUrgentCount } from "@/lib/chat-read-state";
 
-const FILTER_OPTIONS = ["All", "Important", "Actionable", "General", "Business"];
-
-// Returns a color per category for the avatar ring
-function getCategoryColor(category: string, theme: any): string {
-  switch (category.toLowerCase()) {
-    case "important":  return theme.categoryImportant;
-    case "actionable": return theme.categoryActionable;
-    case "business":   return theme.categoryBusiness;
-    default:           return theme.categoryGeneral;
-  }
+function getPreview(chat: Chat): string {
+  const generated = chat.twentyFourHourSummary?.summary?.trim();
+  if (generated) return generated;
+  return "No summary yet — tap ⚡ to generate";
 }
 
-// Avatar with initials
-function ChatAvatar({ name, color }: { name: string; color: string }) {
-  const initials = name
-    .split(" ")
-    .map((w: string) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-
-  return (
-    <View style={[styles.avatar, { backgroundColor: color + "22", borderColor: color }]}>
-      <ThemedText type="small" style={{ color, fontWeight: "700", fontSize: 15 }}>
-        {initials}
-      </ThemedText>
-    </View>
-  );
-}
-
-function ChatListItem({ chat, onPress }: { chat: Chat; onPress: () => void }) {
+function ChatRow({
+  chat,
+  onPress,
+  onLongPress,
+  onSummarize,
+  summarizing,
+}: {
+  chat: Chat;
+  onPress: () => void;
+  onLongPress: () => void;
+  onSummarize: () => void;
+  summarizing: boolean;
+}) {
   const { theme } = useTheme();
-  const categoryColor = getCategoryColor(chat.category, theme);
-  const dateStr = new Date(chat.analyzedAt).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
+  const unreadUrgentCount = getUnreadUrgentCount(chat);
+  const timeStr = new Date(chat.analyzedAt).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
   });
 
   return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.chatItem,
-        {
-          backgroundColor: pressed ? theme.backgroundSecondary : theme.backgroundDefault,
-        },
-      ]}
-      onPress={onPress}
-    >
-      {/* Left: Avatar */}
-      <ChatAvatar name={chat.name} color={categoryColor} />
-
-      {/* Center: Content */}
-      <View style={styles.chatItemContent}>
-        <View style={styles.chatItemHeader}>
-          <ThemedText type="body" style={styles.chatName} numberOfLines={1}>
-            {chat.name}
-          </ThemedText>
-          <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-            {dateStr}
-          </ThemedText>
-        </View>
-
-        {(() => {
-          const preview =
-            chat.extractedData.senderInsights?.[0]?.summary ||
-            chat.summary?.split("\n")[0];
-          return preview ? (
+    <View style={[styles.row, { backgroundColor: theme.backgroundRoot }]}>
+      <Pressable
+        style={({ pressed }) => [styles.rowMain, pressed && { opacity: 0.85 }]}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={400}
+      >
+        <Avatar name={chat.name} color={theme.primary} size={52} />
+        <View style={styles.rowBody}>
+          <View style={styles.rowTop}>
+            <ThemedText type="body" style={styles.chatName} numberOfLines={1}>
+              {chat.name}
+            </ThemedText>
+            <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+              {timeStr}
+            </ThemedText>
+          </View>
+          <View style={styles.rowBottom}>
             <ThemedText
               type="small"
-              style={{ color: theme.textSecondary, marginTop: 2 }}
-              numberOfLines={1}
+              style={{ color: theme.textSecondary, flex: 1 }}
+              numberOfLines={2}
+              ellipsizeMode="tail"
             >
-              {preview}
+              {getPreview(chat)}
             </ThemedText>
-          ) : null;
-        })()}
-
-        <View style={styles.chatItemFooter}>
-          <CategoryBadge category={chat.category} size="small" />
-          {chat.actionCount > 0 ? (
-            <View style={[styles.actionBadge, { backgroundColor: theme.categoryActionable + "22" }]}>
-              <Feather name="check-square" size={11} color={theme.categoryActionable} />
-              <ThemedText type="caption" style={{ color: theme.categoryActionable, fontWeight: "600" }}>
-                {chat.actionCount} actions
-              </ThemedText>
-            </View>
-          ) : null}
+            {unreadUrgentCount > 0 ? (
+              <View style={[styles.badge, { backgroundColor: theme.priorityUrgent }]}>
+                <ThemedText type="caption" style={{ color: theme.onPrimary, fontWeight: "700" }}>
+                  {unreadUrgentCount}
+                </ThemedText>
+              </View>
+            ) : null}
+          </View>
         </View>
-      </View>
-
-      {/* Right: Arrow */}
-      <Feather name="chevron-right" size={18} color={theme.textSecondary} style={{ marginLeft: Spacing.sm }} />
-    </Pressable>
+      </Pressable>
+      <Pressable onPress={onSummarize} style={styles.summarizeBtn} hitSlop={8}>
+        {summarizing ? (
+          <ActivityIndicator size="small" color={theme.primary} />
+        ) : (
+          <Feather name="zap" size={18} color={theme.primary} />
+        )}
+      </Pressable>
+    </View>
   );
 }
 
 export default function ChatsScreen() {
-  const screen = useTabScreenInsets();
+  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { chats } = useChats();
+  const { chats, updateChat, deleteChat, markChatAsRead, refreshChats } = useChats();
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void refreshChats();
+    }, [refreshChats])
+  );
+  const { deleteActionsByChatId } = useActions();
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [selectedFilter, setSelectedFilter] = useState("All");
+  const [summarizingId, setSummarizingId] = useState<string | null>(null);
 
-  const filteredChats = chats.filter((chat) => {
-    const matchesSearch = chat.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter =
-      selectedFilter === "All" ||
-      chat.category.toLowerCase() === selectedFilter.toLowerCase();
-    return matchesSearch && matchesFilter;
-  });
-
-  const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
-      <View style={[styles.emptyIconWrap, { backgroundColor: theme.primary + "15" }]}>
-        <Feather name="message-circle" size={48} color={theme.primary} />
-      </View>
-      <ThemedText type="h4" style={styles.emptyTitle}>
-        No chats imported yet
-      </ThemedText>
-      <ThemedText type="body" style={[styles.emptyDescription, { color: theme.textSecondary }]}>
-        Tap the + button to import your first WhatsApp chat
-      </ThemedText>
-    </View>
+  const filtered = chats.filter((c) =>
+    c.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const renderSeparator = () => (
-    <View style={[styles.separator, { backgroundColor: theme.border }]} />
-  );
+  const handleDeleteChat = (chat: Chat) => {
+    Alert.alert(
+      "Delete chat",
+      `Remove "${chat.name}" and all its insights? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            await deleteActionsByChatId(chat.id);
+            await deleteChat(chat.id);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleSummarize = async (chat: Chat) => {
+    setSummarizingId(chat.id);
+    try {
+      const result = await summarizeChat(chat);
+      const payload: TwentyFourHourSummary = {
+        summary: result.summary,
+        insights: result.insights ?? {
+          keyDecisions: [],
+          assignedTasks: [],
+          pendingActions: [],
+          blockers: [],
+          peopleMentioned: [],
+          sentiment: "Neutral",
+        },
+        messageCount: result.messageCount ?? 0,
+        period: result.period,
+        generatedAt: new Date().toISOString(),
+      };
+      await updateChat(chat.id, { twentyFourHourSummary: payload });
+      Alert.alert(
+        "Summary ready",
+        "Open the chat dashboard to read the full summary."
+      );
+    } catch (err) {
+      Alert.alert(
+        "Summarize failed",
+        err instanceof Error ? err.message : "Could not generate summary"
+      );
+    } finally {
+      setSummarizingId(null);
+    }
+  };
+
+  const fabBottom = insets.bottom + FAB_OFFSET;
 
   return (
     <ThemedView style={styles.container}>
-
-      {/* ── Search + Filter Header ── */}
-      <Card
-        style={[
-          styles.searchContainer,
-          {
-            paddingTop: screen.paddingTop,
-            backgroundColor: theme.backgroundRoot,
-            borderBottomColor: theme.border,
-          },
+      <WhatsAppHeader
+        title="ConvoInsight"
+        showBrand
+        actions={[
+          { icon: "settings", onPress: () => navigation.navigate("Settings"), label: "Settings" },
         ]}
-      >
-        {/* Search Bar */}
-        <View
+      />
+
+      <View style={[styles.searchWrap, { backgroundColor: theme.headerBackground }]}>
+        <SearchBar value={searchQuery} onChangeText={setSearchQuery} placeholder="Search chats" />
+      </View>
+
+      {chats.length === 0 ? (
+        <View style={styles.empty}>
+          <Feather name="message-circle" size={64} color={theme.textSecondary} />
+          <ThemedText type="h4" style={{ marginTop: Spacing.lg, textAlign: "center" }}>
+            No chats yet
+          </ThemedText>
+          <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "center", marginTop: Spacing.sm }}>
+            Import a WhatsApp export to get started
+          </ThemedText>
+          <Pressable
+            style={[styles.emptyCta, { backgroundColor: theme.primary }]}
+            onPress={() => navigation.navigate("Upload")}
+          >
+            <Feather name="upload-cloud" size={20} color={theme.onPrimary} />
+            <ThemedText type="body" style={{ color: theme.onPrimary, fontWeight: "600" }}>
+              Upload chat
+            </ThemedText>
+          </Pressable>
+        </View>
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <ChatRow
+              chat={item}
+              onPress={() => {
+                void markChatAsRead(item.id);
+                navigation.navigate("ChatDetail", { chatId: item.id });
+              }}
+              onLongPress={() => handleDeleteChat(item)}
+              onSummarize={() => handleSummarize(item)}
+              summarizing={summarizingId === item.id}
+            />
+          )}
+          ItemSeparatorComponent={() => (
+            <View style={[styles.separator, { backgroundColor: theme.divider }]} />
+          )}
+          contentContainerStyle={{ paddingBottom: fabBottom + FAB_SIZE + Spacing.lg }}
+        />
+      )}
+
+      {chats.length > 0 ? (
+        <Pressable
           style={[
-            styles.searchInputContainer,
+            styles.fab,
             {
-              backgroundColor: theme.backgroundDefault,
-              borderColor: searchFocused ? theme.primary : "transparent",
-              borderWidth: searchFocused ? 1.5 : 1.5,
+              backgroundColor: theme.primary,
+              bottom: fabBottom,
             },
           ]}
+          onPress={() => navigation.navigate("Upload")}
         >
-          <Feather
-            name="search"
-            size={18}
-            color={searchFocused ? theme.primary : theme.textSecondary}
-          />
-          <TextInput
-            style={[styles.searchInput, { color: theme.text }]}
-            placeholder="Search chats..."
-            placeholderTextColor={theme.textSecondary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setSearchFocused(false)}
-          />
-          {searchQuery.length > 0 ? (
-            <Pressable
-              onPress={() => setSearchQuery("")}
-              style={[styles.clearBtn, { backgroundColor: theme.backgroundSecondary }]}
-            >
-              <Feather name="x" size={13} color={theme.textSecondary} />
-            </Pressable>
-          ) : null}
-        </View>
-
-        {/* Filter Chips */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterContainer}
-        >
-          {FILTER_OPTIONS.map((filter) => {
-            const isSelected = selectedFilter === filter;
-            return (
-              <Pressable
-                key={filter}
-                style={[
-                  styles.filterChip,
-                  {
-                    backgroundColor: isSelected ? theme.primary : theme.backgroundDefault,
-                    shadowColor: isSelected ? theme.primary : "transparent",
-                    shadowOpacity: 0.3,
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowRadius: 4,
-                    elevation: isSelected ? 3 : 0,
-                  },
-                ]}
-                onPress={() => setSelectedFilter(filter)}
-              >
-                <ThemedText
-                  type="small"
-                  style={{
-                    color: isSelected ? "#FFFFFF" : theme.text,
-                    fontWeight: isSelected ? "700" : "400",
-                  }}
-                >
-                  {filter}
-                </ThemedText>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
-        {/* Result count */}
-        {chats.length > 0 ? (
-          <ThemedText type="caption" style={[styles.resultCount, { color: theme.textSecondary }]}>
-            {filteredChats.length} {filteredChats.length === 1 ? "chat" : "chats"}
-          </ThemedText>
-        ) : null}
-      </Card>
-          <ChatListItem
-            chat={item}
-            onPress={() => navigation.navigate("Dashboard", { chatId: item.id })}
-          />
-        )}
-        ItemSeparatorComponent={renderSeparator}
-        contentContainerStyle={{
-          paddingBottom: screen.paddingBottom,
-          flexGrow: 1,
-        }}
-        scrollIndicatorInsets={{ bottom: screen.scrollIndicatorBottom }}
-        ListEmptyComponent={renderEmptyState}
-      />
+          <Feather name="plus" size={28} color={theme.onPrimary} />
+        </Pressable>
+      ) : null}
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-
-  // ── Header ──
-  searchContainer: {
+  container: { flex: 1 },
+  searchWrap: {
     paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingBottom: Spacing.md,
   },
-  searchInputContainer: {
+  row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: Spacing.md,
-    height: 46,
-    borderRadius: BorderRadius.md,
-    gap: Spacing.sm,
+    paddingRight: Spacing.sm,
   },
-  searchInput: {
+  rowMain: {
     flex: 1,
-    fontSize: 15,
-  },
-  clearBtn: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  filterContainer: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.xs,
-  },
-  filterChip: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
-    borderRadius: BorderRadius.full,
-  },
-  resultCount: {
-    marginTop: Spacing.sm,
-    marginBottom: Spacing.xs,
-    marginLeft: 2,
-  },
-
-  // ── Chat Item ──
-  chatItem: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
+    gap: Spacing.md,
   },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: Spacing.md,
-  },
-  chatItemContent: {
-    flex: 1,
-  },
-  chatItemHeader: {
+  rowBody: { flex: 1 },
+  rowTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 2,
+    marginBottom: 4,
   },
-  chatName: {
-    fontWeight: "600",
-    flex: 1,
-    marginRight: Spacing.sm,
-    fontSize: 15,
-  },
-  chatItemFooter: {
-    flexDirection: "row",
+  chatName: { fontWeight: "600", flex: 1, marginRight: Spacing.sm },
+  rowBottom: { flexDirection: "row", alignItems: "flex-end", gap: Spacing.sm },
+  badge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
     alignItems: "center",
-    gap: Spacing.sm,
-    marginTop: Spacing.xs,
+    justifyContent: "center",
+    paddingHorizontal: 6,
   },
-  actionBadge: {
-    flexDirection: "row",
+  summarizeBtn: {
+    width: 36,
+    height: 36,
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.full,
+    justifyContent: "center",
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: Spacing.lg + 48 + Spacing.md, // aligns with text, skips avatar
+    marginLeft: Spacing.lg + 52 + Spacing.md,
   },
-
-  // ── Empty State ──
-  emptyContainer: {
+  empty: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: Spacing.xl,
+    paddingHorizontal: Spacing["3xl"],
   },
-  emptyIconWrap: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+  emptyCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginTop: Spacing.xl,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: 999,
+  },
+  fab: {
+    position: "absolute",
+    right: Spacing.lg,
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    borderRadius: FAB_SIZE / 2,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: Spacing.xl,
-  },
-  emptyTitle: {
-    textAlign: "center",
-    marginBottom: Spacing.sm,
-  },
-  emptyDescription: {
-    textAlign: "center",
-    lineHeight: 22,
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
   },
 });

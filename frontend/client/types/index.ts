@@ -1,3 +1,20 @@
+export interface SummaryInsights {
+  keyDecisions: string[];
+  assignedTasks: string[];
+  pendingActions: string[];
+  blockers: string[];
+  peopleMentioned: string[];
+  sentiment: "Positive" | "Neutral" | "Negative";
+}
+
+export interface TwentyFourHourSummary {
+  summary: string;
+  insights: SummaryInsights;
+  messageCount: number;
+  generatedAt: string;
+  period?: "24h" | "conversation_tail" | "recent" | "client";
+}
+
 export interface Chat {
   id: string;
   name: string;
@@ -7,6 +24,12 @@ export interface Chat {
   actionCount: number;
   messages: Message[];
   extractedData: ExtractedData;
+  /** Backend job id used for MongoDB message storage and /api/summarize/ */
+  jobId?: string;
+  twentyFourHourSummary?: TwentyFourHourSummary;
+  /** Set when the user opens the chat — hides unread urgent badge on the list. */
+  isRead?: boolean;
+  readAt?: string;
 }
 
 export interface Message {
@@ -46,6 +69,47 @@ export interface ConversationSummary {
   overview: string;
 }
 
+export interface EntityInsight {
+  text: string;
+  type: string;
+  count: number;
+}
+
+export interface TopicInsight {
+  id: number;
+  title: string;
+  senders: string[];
+  message_count: number;
+  keywords: string[];
+}
+
+export interface SentimentInsight {
+  label: string;
+  score: number;
+  positive_count: number;
+  negative_count: number;
+  neutral_count: number;
+}
+
+export interface AnalyticsInsight {
+  total_messages: number;
+  total_participants: number;
+  messages_by_sender: Record<string, number>;
+  action_count: number;
+  urgent_count: number;
+  topic_count: number;
+  entity_count: number;
+}
+
+export interface MetadataInsight {
+  chat_name: string;
+  chat_type: string;
+  participants: string[];
+  current_user: string;
+  processed_at: string;
+  pipeline_version: string;
+}
+
 export interface ExtractedData {
   actionItems: ActionItem[];
   businessOrders: BusinessOrder[];
@@ -54,6 +118,11 @@ export interface ExtractedData {
   senderInsights: SenderInsight[];
   priorities: PrioritiesBucket;
   conversationSummary: ConversationSummary;
+  entities: EntityInsight[];
+  topics: TopicInsight[];
+  sentiment: SentimentInsight;
+  analytics: AnalyticsInsight;
+  metadata: MetadataInsight;
 }
 
 export interface ActionItem {

@@ -1,15 +1,25 @@
 import React, { useState, useEffect } from "react";
 import { View, StyleSheet, Pressable, Alert, Switch } from "react-native";
-import { useTabScreenInsets } from "@/hooks/useTabScreenInsets";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useNavigation, CommonActions } from "@react-navigation/native";
 
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { ThemedText } from "@/components/ThemedText";
+import { ThemedView } from "@/components/ThemedView";
+import { AppHeader } from "@/components/ui/AppHeader";
+import { ConvoInsightLogo } from "@/components/brand/ConvoInsightLogo";
+import { useChats } from "@/hooks/useChats";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { useTheme } from "@/hooks/useTheme";
+import type { ThemePreference } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { useSettings } from "@/hooks/useSettings";
 import { logout, getStoredUser } from "@/lib/auth";
+import {
+  clearUrgentNotifications,
+  ensureNotificationPermissions,
+} from "@/lib/urgent-notifications";
 
 function SettingsSection({
   title,
@@ -112,26 +122,42 @@ function SettingsToggle({
         value={value}
         onValueChange={onValueChange}
         trackColor={{ false: theme.backgroundSecondary, true: theme.primary }}
-        thumbColor="#FFFFFF"
+        thumbColor={theme.onPrimary}
       />
     </View>
   );
 }
 
 export default function ProfileScreen() {
-  const screen = useTabScreenInsets();
-  const { theme, isDark, toggleTheme } = useTheme();
-  const { settings, updateSettings, clearAllData } = useSettings();
+  const insets = useSafeAreaInsets();
+  const screen = {
+    paddingTop: Spacing.md,
+    paddingBottom: insets.bottom + Spacing.xl,
+    paddingHorizontal: Spacing.lg,
+    scrollIndicatorBottom: insets.bottom,
+  };
+  const { theme, themePreference, setThemePreference } = useTheme();
+
+  const themeLabels: Record<ThemePreference, string> = {
+    light: "Light",
+    dark: "Dark",
+  };
+
+  const handleThemeSelect = (label: string) => {
+    void setThemePreference(label === "Dark" ? "dark" : "light");
+  };
+  const { settings, updateSettings } = useSettings();
+  const { clearSummaryCache } = useChats();
   const navigation = useNavigation<any>();
 
   const [userName, setUserName] = useState("ConvoInsight User");
-  const [userPhone, setUserPhone] = useState("");
+  const [userEmail, setUserEmail] = useState("");
 
   useEffect(() => {
     getStoredUser().then((user) => {
       if (user) {
         setUserName(user.displayName);
-        setUserPhone(user.phone);
+        setUserEmail(user.email);
       }
     });
   }, []);
@@ -162,36 +188,15 @@ export default function ProfileScreen() {
   const handleClearCache = () => {
     Alert.alert(
       "Clear Cache",
-      "This will remove all cached data. Your analyzed chats will remain.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Clear", style: "destructive", onPress: () => {} },
-      ]
-    );
-  };
-
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      "Delete All Data",
-      "This will permanently delete all your data including analyzed chats, action items, and settings. This cannot be undone.",
+      "This removes generated summaries and other cached data. Your analyzed chats and action items will remain.",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Delete",
+          text: "Clear",
           style: "destructive",
-          onPress: () => {
-            Alert.alert(
-              "Are you sure?",
-              "This action cannot be undone.",
-              [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Yes, Delete Everything",
-                  style: "destructive",
-                  onPress: clearAllData,
-                },
-              ]
-            );
+          onPress: async () => {
+            await clearSummaryCache();
+            Alert.alert("Cache cleared", "Cached summaries have been removed.");
           },
         },
       ]
@@ -199,66 +204,71 @@ export default function ProfileScreen() {
   };
 
   return (
-    <KeyboardAwareScrollViewCompat
-      style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
-      contentContainerStyle={{
-        paddingTop: screen.paddingTop,
-        paddingBottom: screen.paddingBottom,
-        paddingHorizontal: screen.paddingHorizontal,
-      }}
-      scrollIndicatorInsets={{ bottom: screen.scrollIndicatorBottom }}
-      showsVerticalScrollIndicator={false}
-    >
+    <ThemedView style={styles.screen}>
+      <AppHeader
+        title="Settings"
+        onBack={() =>
+          navigation.canGoBack() ? navigation.goBack() : navigation.navigate("Chats")
+        }
+      />
+      <KeyboardAwareScrollViewCompat
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingTop: screen.paddingTop,
+          paddingBottom: screen.paddingBottom,
+          paddingHorizontal: screen.paddingHorizontal,
+        }}
+        scrollIndicatorInsets={{ bottom: screen.scrollIndicatorBottom }}
+        showsVerticalScrollIndicator={false}
+      >
       <View style={styles.profileHeader}>
-        <View
-          style={[
-            styles.avatarContainer,
-            { backgroundColor: theme.primary + "20" },
-          ]}
-        >
-          <Feather name="user" size={40} color={theme.primary} />
-        </View>
-        {/* Shows the name entered during signup */}
+        <ConvoInsightLogo size="md" />
         <ThemedText type="h3" style={styles.profileName}>
           {userName}
         </ThemedText>
         <ThemedText type="small" style={{ color: theme.textSecondary }}>
-          {userPhone || "Manage your settings and preferences"}
+          {userEmail || "Manage your settings and preferences"}
         </ThemedText>
       </View>
 
       <SettingsSection title="NOTIFICATIONS">
         <SettingsToggle
-          icon="bell"
-          label="Reminders"
-          value={settings.remindersEnabled}
-          onValueChange={(value) => updateSettings({ remindersEnabled: value })}
-        />
-        <SettingsToggle
           icon="alert-circle"
           label="Urgent Alerts"
           value={settings.urgentAlertsEnabled}
-          onValueChange={(value) =>
-            updateSettings({ urgentAlertsEnabled: value })
-          }
-        />
-        <SettingsToggle
-          icon="calendar"
-          label="Daily Summary"
-          value={settings.dailySummaryEnabled}
-          onValueChange={(value) =>
-            updateSettings({ dailySummaryEnabled: value })
-          }
+          onValueChange={async (value) => {
+            if (value) {
+              const granted = await ensureNotificationPermissions();
+              if (!granted) {
+                Alert.alert(
+                  "Notifications blocked",
+                  "Allow notifications in your device settings to receive urgent message alerts."
+                );
+                return;
+              }
+            } else {
+              await clearUrgentNotifications();
+            }
+            updateSettings({ urgentAlertsEnabled: value });
+          }}
         />
       </SettingsSection>
 
       <SettingsSection title="APPEARANCE">
-        <SettingsToggle
-          icon="moon"
-          label="Dark Mode"
-          value={isDark}
-          onValueChange={toggleTheme}
-        />
+        <View style={styles.appearanceRow}>
+          <View style={styles.settingsRowLeft}>
+            <Feather name="moon" size={20} color={theme.text} />
+            <ThemedText type="body">Theme</ThemedText>
+          </View>
+        </View>
+        <View style={styles.themePicker}>
+          <SegmentedControl
+            options={["Light", "Dark"]}
+            selected={themeLabels[themePreference]}
+            onSelect={handleThemeSelect}
+            style={styles.themePickerControl}
+          />
+        </View>
       </SettingsSection>
 
       <SettingsSection title="DATA & PRIVACY">
@@ -272,11 +282,7 @@ export default function ProfileScreen() {
           icon="trash-2"
           label="Clear Cache"
           onPress={handleClearCache}
-        />
-        <SettingsRow
-          icon="download"
-          label="Export Data"
-          onPress={() => {}}
+          showArrow={false}
         />
       </SettingsSection>
 
@@ -287,13 +293,6 @@ export default function ProfileScreen() {
           onPress={handleLogout}
           showArrow={false}
         />
-        <SettingsRow
-          icon="trash"
-          label="Delete All Data"
-          onPress={handleDeleteAccount}
-          showArrow={false}
-          isDestructive
-        />
       </SettingsSection>
 
       <View style={styles.footer}>
@@ -301,24 +300,21 @@ export default function ProfileScreen() {
           ConvoInsight v1.0.0
         </ThemedText>
       </View>
-    </KeyboardAwareScrollViewCompat>
+      </KeyboardAwareScrollViewCompat>
+    </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
   profileHeader: {
     alignItems: "center",
     marginBottom: Spacing.xl,
   },
-  avatarContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: Spacing.md,
-  },
   profileName: {
+    marginTop: Spacing.md,
     marginBottom: Spacing.xs,
   },
   section: {
@@ -355,5 +351,19 @@ const styles = StyleSheet.create({
   footer: {
     alignItems: "center",
     marginTop: Spacing.xl,
+  },
+  appearanceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xs,
+  },
+  themePicker: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.sm,
+  },
+  themePickerControl: {
+    marginBottom: 0,
   },
 });
