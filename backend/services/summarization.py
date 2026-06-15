@@ -102,7 +102,9 @@ Summary:"""
 
         return _rule_based_summary(cluster_data)
 
-    def summarize_by_sender(self, clusters: list, current_user: str) -> dict:
+    def summarize_by_sender(
+        self, clusters: list, current_user: str, *, include_current_user: bool = False
+    ) -> dict:
         sender_summaries: dict = {}
 
         for cluster in clusters:
@@ -110,7 +112,7 @@ Summary:"""
                 continue
 
             sender = cluster["senders"][0]
-            if sender == current_user:
+            if sender == current_user and not include_current_user:
                 continue
 
             if sender not in sender_summaries:
@@ -129,13 +131,15 @@ Summary:"""
         return sender_summaries
 
     @staticmethod
-    def summarize_by_sender_rule_based(clusters: list, current_user: str) -> dict:
+    def summarize_by_sender_rule_based(
+        clusters: list, current_user: str, *, include_current_user: bool = False
+    ) -> dict:
         sender_summaries: dict = {}
         for cluster in clusters:
             if not cluster.get("senders"):
                 continue
             sender = cluster["senders"][0]
-            if sender == current_user:
+            if sender == current_user and not include_current_user:
                 continue
             if sender not in sender_summaries:
                 sender_summaries[sender] = {"clusters": [], "total_messages": 0}

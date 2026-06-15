@@ -23,6 +23,60 @@ def test_parse_chat_from_text():
     assert result["chatName"] == "Test Chat"
 
 
+SOLO_VOICE = """15/06/2026, 10:00 am - Me: I need to finish the FYP report by Friday urgently
+15/06/2026, 10:01 am - Me: Can someone review my chapter 3 draft today?
+"""
+
+
+def test_pipeline_solo_voice_note_includes_intent_and_priorities(monkeypatch):
+    """Voice-note-only imports are all from current_user and must still be analyzed."""
+
+    def fake_summarize(self, shaped_clusters, current_user, *, include_current_user=False):
+        out = {}
+        for c in shaped_clusters:
+            sender = c["senders"][0]
+            if sender == current_user and not include_current_user:
+                continue
+            if sender not in out:
+                out[sender] = {"clusters": [], "total_messages": 0}
+            out[sender]["clusters"].append(
+                {
+                    "cluster_id": c["cluster_id"],
+                    "summary": "Me needs help finishing the FYP report urgently.",
+                    "message_count": c["message_count"],
+                    "messages": c.get("messages", []),
+                    "original_text": c.get("combined_text", ""),
+                }
+            )
+            out[sender]["total_messages"] += c["message_count"]
+        return out
+
+    monkeypatch.setattr(
+        "backend.services.pipeline._summarize_clusters",
+        lambda shaped, user, include_current_user=False: fake_summarize(
+            None, shaped, user, include_current_user=include_current_user
+        ),
+    )
+
+    def fake_classify_all(sender_summaries):
+        for data in sender_summaries.values():
+            for cluster in data.get("clusters", []):
+                cluster["intent"] = "request"
+        return sender_summaries
+
+    monkeypatch.setattr("backend.services.pipeline.classify_all", fake_classify_all)
+
+    result, meta = run_analysis_pipeline(
+        SOLO_VOICE,
+        chat_name="Voice note",
+        current_user="Me",
+    )
+
+    assert meta["messageCount"] >= 2
+    assert len(result.priorities.urgent) + len(result.priorities.moderate) + len(result.priorities.low) >= 1
+    assert any(item.intent == "request" for item in result.priorities.urgent + result.priorities.moderate + result.priorities.low)
+
+
 def test_pipeline_structure_without_gemini(monkeypatch):
     """Pipeline returns canonical JSON shape; summarizer uses fallback if no API key."""
 
@@ -48,7 +102,9 @@ def test_pipeline_structure_without_gemini(monkeypatch):
 
     monkeypatch.setattr(
         "backend.services.pipeline._summarize_clusters",
-        lambda shaped, user: fake_summarize(None, shaped, user),
+        lambda shaped, user, include_current_user=False: fake_summarize(
+            None, shaped, user
+        ),
     )
     def fake_classify_all(sender_summaries):
         for sender, data in sender_summaries.items():

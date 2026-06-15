@@ -32,6 +32,12 @@ API_BASES = {
     "together": "https://api.together.xyz/v1",
 }
 
+# Cloudflare (Groq) blocks Python-urllib's default User-Agent (error 1010).
+HTTP_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+
 PERIOD_CONTEXT = {
     "24h": "the last 24 hours (real time)",
     "conversation_tail": "the most recent 24 hours of this conversation",
@@ -249,6 +255,7 @@ class LlamaService:
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
+            "User-Agent": HTTP_USER_AGENT,
         }
         try:
             data = self._http_post_json(url, payload, headers=headers)
@@ -267,7 +274,11 @@ class LlamaService:
 
     @staticmethod
     def _http_get(url: str) -> Dict[str, Any]:
-        req = urllib.request.Request(url, method="GET")
+        req = urllib.request.Request(
+            url,
+            method="GET",
+            headers={"User-Agent": HTTP_USER_AGENT},
+        )
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
@@ -278,7 +289,11 @@ class LlamaService:
         headers: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         body = json.dumps(payload).encode("utf-8")
-        hdrs = {"Content-Type": "application/json", **(headers or {})}
+        hdrs = {
+            "Content-Type": "application/json",
+            "User-Agent": HTTP_USER_AGENT,
+            **(headers or {}),
+        }
         req = urllib.request.Request(url, data=body, headers=hdrs, method="POST")
         try:
             with urllib.request.urlopen(req, timeout=120) as resp:

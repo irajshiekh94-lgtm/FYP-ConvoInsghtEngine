@@ -100,7 +100,7 @@ function mapMessages(
 ): Message[] {
   return (raw || [])
     .filter((m) => m.content?.trim())
-    .slice(0, 200)
+    .slice(-200)
     .map((m, i) => ({
       id: `${chatId}_msg_${i}`,
       sender: m.sender,

@@ -26,7 +26,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useChats } from "@/hooks/useChats";
-import { summarizeChat24h } from "@/lib/api-client";
+import { summarizeChat } from "@/lib/summarize-chat";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Surface } from "@/components/ui/Surface";
 import { Button } from "@/components/Button";
@@ -527,13 +527,10 @@ export default function ChatAnalysisScreen() {
 
   const fetchTwentyFourHourSummary = async () => {
     if (!chat) return;
-    const chatId = chat.jobId || chat.id;
     setSummaryLoading(true);
     setSummaryError(undefined);
     try {
-      const chatType =
-        chat.extractedData.metadata?.chat_type === "group" ? "group" : "individual";
-      const result = await summarizeChat24h({ chatId, chatType });
+      const result = await summarizeChat(chat);
       const payload: TwentyFourHourSummary = {
         summary: result.summary,
         insights: result.insights ?? {

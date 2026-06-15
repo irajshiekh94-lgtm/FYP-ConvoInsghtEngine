@@ -10,7 +10,7 @@ import {
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import type { Chat, PrioritiesBucket } from "@/types";
+import type { Chat, PrioritiesBucket, TwentyFourHourSummary } from "@/types";
 import { EMPTY_PRIORITIES } from "@/lib/transform-analysis";
 
 type PriorityTab = "High" | "Moderate" | "Low";
@@ -23,6 +23,7 @@ const TAB_TO_LEVEL: Record<PriorityTab, PriorityLevel> = {
 
 interface ChatDashboardPanelProps {
   chat: Chat;
+  summary?: TwentyFourHourSummary | null;
   summaryLoading: boolean;
   summaryError?: string;
   onRefreshSummary: () => void;
@@ -30,6 +31,7 @@ interface ChatDashboardPanelProps {
 
 export function ChatDashboardPanel({
   chat,
+  summary,
   summaryLoading,
   summaryError,
   onRefreshSummary,
@@ -55,7 +57,7 @@ export function ChatDashboardPanel({
       showsVerticalScrollIndicator={false}
     >
       <ExecutiveSummaryPanel
-        summary={chat.twentyFourHourSummary}
+        summary={summary ?? chat.twentyFourHourSummary}
         loading={summaryLoading}
         error={summaryError}
         onRefresh={onRefreshSummary}

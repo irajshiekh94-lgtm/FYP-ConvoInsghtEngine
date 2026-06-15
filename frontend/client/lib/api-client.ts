@@ -1,11 +1,14 @@
 import { getApiUrl } from "./query-client";
+import { Platform } from "react-native";
 
 function wrapNetworkError(error: unknown, url: string): Error {
   if (error instanceof TypeError && /network request failed/i.test(error.message)) {
     return new Error(
       `Cannot reach the API at ${url}. ` +
-        "Start the backend (uvicorn on port 8000) and set EXPO_PUBLIC_API_URL in frontend/.env " +
-        "to your Mac's LAN IP when using a physical device (not 127.0.0.1)."
+        "Start the backend: uvicorn backend.server:app --reload --host 0.0.0.0 --port 8000. " +
+        "In frontend/.env set EXPO_PUBLIC_API_URL — use http://localhost:8000 on this PC, " +
+        "http://10.0.2.2:8000 for Android emulator, or http://YOUR_PC_LAN_IP:8000 for a phone " +
+        "(run ipconfig on Windows and use your IPv4 address; phone and PC must be on the same Wi‑Fi)."
     );
   }
   return error instanceof Error ? error : new Error(String(error));
@@ -263,17 +266,27 @@ export async function transcribeVoiceNoteFile(
   mimeType = "audio/m4a"
 ): Promise<string> {
   const baseUrl = getApiUrl();
+  const url = new URL("/transcribe/audio", baseUrl).href;
   const formData = new FormData();
+  const uploadUri =
+    Platform.OS === "android" ? uri : uri.replace("file://", "");
+  const uploadName = name.includes(".") ? name : `${name}.m4a`;
+
   formData.append("file", {
-    uri,
-    name,
+    uri: uploadUri,
+    name: uploadName,
     type: mimeType,
   } as unknown as Blob);
 
-  const res = await fetch(new URL("/transcribe/audio", baseUrl).href, {
-    method: "POST",
-    body: formData,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      body: formData,
+    });
+  } catch (error) {
+    throw wrapNetworkError(error, url);
+  }
 
   if (!res.ok) {
     await handleApiError(res);

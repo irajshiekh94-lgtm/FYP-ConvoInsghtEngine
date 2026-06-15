@@ -19,6 +19,7 @@ from backend.schemas.summary import (
 )
 from backend.services.llama_service import LlamaServiceError, llama_service
 from backend.services.message_repository import MessageRepositoryError, message_repository
+from backend.services.timestamp_utils import parse_message_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class SummaryController:
         docs: List[MessageDocument] = []
         for item in items:
             try:
-                ts = datetime.fromisoformat(item.timestamp.replace("Z", "+00:00"))
+                ts = parse_message_timestamp(item.timestamp)
             except ValueError:
                 ts = datetime.utcnow()
             docs.append(
@@ -70,7 +71,7 @@ class SummaryController:
             if not text:
                 continue
             try:
-                ts = datetime.fromisoformat(item.timestamp.replace("Z", "+00:00"))
+                ts = parse_message_timestamp(item.timestamp)
             except ValueError:
                 ts = datetime.utcnow()
             docs.append(
@@ -98,8 +99,13 @@ class SummaryController:
                 messages, period = self.repo.get_messages_for_summary(
                     body.chatId.strip(), max_messages=max_messages
                 )
-                if messages:
-                    return messages, period
+                usable = [
+                    m
+                    for m in messages
+                    if (m.get("messageText") or m.get("content") or "").strip()
+                ]
+                if usable:
+                    return usable, period
             except MessageRepositoryError as exc:
                 logger.error("Failed to load messages for %s: %s", body.chatId, exc)
                 if not body.messages:

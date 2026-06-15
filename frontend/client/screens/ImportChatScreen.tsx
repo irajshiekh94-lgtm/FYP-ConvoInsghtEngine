@@ -38,6 +38,19 @@ function guessMimeType(filename: string): string {
   return map[ext || ""] || "audio/m4a";
 }
 
+function deriveChatName(chatFile: SelectedFile | null, voiceNotes: SelectedFile[]): string {
+  if (chatFile) {
+    return chatFile.name.replace(/\.txt$/i, "");
+  }
+  if (voiceNotes.length === 1) {
+    return voiceNotes[0].name.replace(/\.[^.]+$/, "");
+  }
+  if (voiceNotes.length > 1) {
+    return "Voice notes";
+  }
+  return "Uploaded chat";
+}
+
 export default function ImportChatScreen() {
   const { theme } = useTheme();
   const navigation =
@@ -103,14 +116,19 @@ export default function ImportChatScreen() {
     setVoiceNotes((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const canAnalyze = Boolean(chatFile) || voiceNotes.length > 0;
+
   const startProcessing = async () => {
-    if (!chatFile) return;
+    if (!canAnalyze) return;
 
     setIsPreparing(true);
     try {
-      let chatContent = await FileSystem.readAsStringAsync(chatFile.uri);
-      const chatName = chatFile.name.replace(/\.txt$/i, "");
       const userName = whatsAppName.trim() || "Me";
+      let chatContent = "";
+
+      if (chatFile) {
+        chatContent = await FileSystem.readAsStringAsync(chatFile.uri);
+      }
 
       if (voiceNotes.length > 0) {
         for (let i = 0; i < voiceNotes.length; i++) {
@@ -120,13 +138,21 @@ export default function ImportChatScreen() {
             note.name,
             guessMimeType(note.name)
           );
-          chatContent += `\n\n[Voice note: ${note.name}]\n${text}`;
+          const now = new Date(Date.now() - i * 60_000);
+          const date = now.toLocaleDateString("en-GB");
+          const time = now
+            .toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
+            .toLowerCase();
+          const line = `${date}, ${time} - ${userName}: ${text.trim()}`;
+          chatContent += chatContent.trim() ? `\n${line}` : line;
         }
       }
 
       if (!chatContent.trim()) {
-        throw new Error("Chat file is empty");
+        throw new Error("No content to analyze. Add a chat export and/or voice notes.");
       }
+
+      const chatName = deriveChatName(chatFile, voiceNotes);
 
       await AsyncStorage.setItem("@ConvoInsight_whatsAppName", userName);
 
@@ -137,7 +163,7 @@ export default function ImportChatScreen() {
       });
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Could not read file";
+        error instanceof Error ? error.message : "Could not prepare upload";
       Alert.alert("Upload failed", message);
     } finally {
       setIsPreparing(false);
@@ -148,7 +174,7 @@ export default function ImportChatScreen() {
     <ThemedView style={styles.container}>
       <AppHeader
         title="Import chat"
-        subtitle="Export from WhatsApp → analyze in seconds"
+        subtitle="Upload a chat export, voice notes, or both"
         onBack={() =>
           navigation.canGoBack()
             ? navigation.goBack()
@@ -191,7 +217,7 @@ export default function ImportChatScreen() {
             Upload export
           </ThemedText>
           <ThemedText type="caption" style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>            
-            Choose a WhatsApp chat export (.txt) without media to start analysis.
+            Optional — choose a WhatsApp chat export (.txt) without media.
           </ThemedText>
           {chatFile ? (
             <View
@@ -250,6 +276,9 @@ export default function ImportChatScreen() {
               Optional
             </ThemedText>
           </View>
+          <ThemedText type="caption" style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
+            Add one or more voice notes. You can analyze voice notes alone or together with a chat export.
+          </ThemedText>
           {voiceNotes.map((note, index) => (
             <View
               key={`${note.name}-${index}`}
@@ -283,7 +312,7 @@ export default function ImportChatScreen() {
 
         <Button
           onPress={startProcessing}
-          disabled={!chatFile || isPreparing}
+          disabled={!canAnalyze || isPreparing}
           loading={isPreparing}
           icon="zap"
           style={styles.submitButton}

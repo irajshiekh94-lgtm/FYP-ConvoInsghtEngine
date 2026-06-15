@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   LayoutAnimation,
@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import * as Speech from "expo-speech";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
@@ -125,6 +126,13 @@ export function ExecutiveSummaryPanel({
   const { theme } = useTheme();
   const [summaryOpen, setSummaryOpen] = useState(true);
   const [insightsOpen, setInsightsOpen] = useState(true);
+  const [speaking, setSpeaking] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      Speech.stop();
+    };
+  }, []);
 
   const hasGeneratedSummary = Boolean(summary?.summary?.trim());
   const insights: SummaryInsights | undefined = hasGeneratedSummary
@@ -150,23 +158,56 @@ export function ExecutiveSummaryPanel({
     setInsightsOpen((v) => !v);
   };
 
+  const toggleSpeak = () => {
+    if (!hasGeneratedSummary || !summary?.summary?.trim()) return;
+
+    if (speaking) {
+      Speech.stop();
+      setSpeaking(false);
+      return;
+    }
+
+    setSpeaking(true);
+    Speech.speak(summary.summary.trim(), {
+      language: "en",
+      onDone: () => setSpeaking(false),
+      onStopped: () => setSpeaking(false),
+      onError: () => setSpeaking(false),
+    });
+  };
+
   return (
     <View style={styles.wrap}>
       <PanelCard>
         <View style={styles.cardHeader}>
           <ThemedText type="h4">Summary</ThemedText>
-          <Pressable
-            onPress={onRefresh}
-            disabled={loading}
-            style={[styles.iconBtn, { borderColor: theme.primary }]}
-            accessibilityLabel="Refresh summary"
-          >
-            {loading ? (
-              <ActivityIndicator size="small" color={theme.primary} />
-            ) : (
-              <Feather name="refresh-cw" size={16} color={theme.primary} />
-            )}
-          </Pressable>
+          <View style={styles.headerActions}>
+            {hasGeneratedSummary ? (
+              <Pressable
+                onPress={toggleSpeak}
+                style={[styles.iconBtn, { borderColor: theme.primary }]}
+                accessibilityLabel={speaking ? "Stop reading summary" : "Listen to summary"}
+              >
+                <Feather
+                  name={speaking ? "square" : "volume-2"}
+                  size={16}
+                  color={theme.primary}
+                />
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={onRefresh}
+              disabled={loading}
+              style={[styles.iconBtn, { borderColor: theme.primary }]}
+              accessibilityLabel="Refresh summary"
+            >
+              {loading ? (
+                <ActivityIndicator size="small" color={theme.primary} />
+              ) : (
+                <Feather name="refresh-cw" size={16} color={theme.primary} />
+              )}
+            </Pressable>
+          </View>
         </View>
 
         {hasGeneratedSummary && summary ? (
@@ -213,7 +254,7 @@ export function ExecutiveSummaryPanel({
                 type="body"
                 style={{ color: theme.textSecondary, textAlign: "center", lineHeight: 22 }}
               >
-                Tap the ⚡ button above to generate a summary for this chat.
+                Tap the refresh button or the ⚡ in the header to generate a summary.
               </ThemedText>
             </View>
           )
@@ -291,6 +332,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: Spacing.md,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
   },
   iconBtn: {
     width: 36,

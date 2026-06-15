@@ -562,6 +562,34 @@ async def normalize_text_file(
 
 # ── Audio Transcription Endpoint ───────────────────────────────────────────────
 
+_AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".opus", ".webm", ".aac"}
+_MIME_TO_EXT = {
+    "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
+    "audio/mpeg": ".mp3",
+    "audio/mp3": ".mp3",
+    "audio/m4a": ".m4a",
+    "audio/mp4": ".m4a",
+    "audio/aac": ".aac",
+    "audio/flac": ".flac",
+    "audio/ogg": ".ogg",
+    "audio/opus": ".opus",
+    "audio/webm": ".webm",
+}
+
+
+def _resolve_audio_suffix(filename: Optional[str], content_type: Optional[str]) -> str:
+    ext = Path(filename or "").suffix.lower()
+    if ext in _AUDIO_EXTENSIONS:
+        return ext
+
+    mime = (content_type or "").split(";")[0].strip().lower()
+    if mime in _MIME_TO_EXT:
+        return _MIME_TO_EXT[mime]
+
+    return ".m4a"
+
+
 @app.post("/transcribe/audio", response_model=AudioTranscribeResponse)
 async def transcribe_audio_file(
     file: UploadFile = File(..., description="Audio file (wav, mp3, m4a, ogg, opus, flac, webm)"),
@@ -576,16 +604,14 @@ async def transcribe_audio_file(
     """
     temp_path = None
     try:
-        valid_extensions = ['.wav', '.mp3', '.m4a', '.flac', '.ogg', '.opus', '.webm']
-        file_ext = Path(file.filename).suffix.lower()
-
-        if file_ext not in valid_extensions:
+        file_ext = _resolve_audio_suffix(file.filename, file.content_type)
+        if file_ext not in _AUDIO_EXTENSIONS:
             raise HTTPException(
                 status_code=400,
-                detail=f"Unsupported audio format. Supported: {', '.join(valid_extensions)}"
+                detail=f"Unsupported audio format. Supported: {', '.join(sorted(_AUDIO_EXTENSIONS))}"
             )
 
-        logger.info(f"🎙️  Processing audio: {file.filename}")
+        logger.info(f"🎙️  Processing audio: {file.filename} ({file_ext})")
 
         if not language or language.lower() == "string":
             language = None

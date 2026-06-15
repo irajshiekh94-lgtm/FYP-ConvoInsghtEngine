@@ -53,7 +53,22 @@ def _get_summarization() -> SummarizationService:
     return _summarization
 
 
-def _summarize_clusters(shaped_clusters: list, current_user: str) -> dict:
+def _solo_participant_chat(cleaned: List[dict], current_user: str) -> bool:
+    """True when every message is from the current user (e.g. voice-note-only import)."""
+    senders = {
+        (msg.get("sender") or "").strip()
+        for msg in cleaned
+        if (msg.get("content") or "").strip()
+    }
+    senders.discard("")
+    if not senders:
+        return False
+    return senders == {current_user.strip()}
+
+
+def _summarize_clusters(
+    shaped_clusters: list, current_user: str, *, include_current_user: bool = False
+) -> dict:
     max_ml_clusters = int(os.getenv("MAX_ML_SUMMARIZE_CLUSTERS", "20"))
     if len(shaped_clusters) > max_ml_clusters:
         logger.info(
@@ -62,14 +77,16 @@ def _summarize_clusters(shaped_clusters: list, current_user: str) -> dict:
             max_ml_clusters,
         )
         return SummarizationService.summarize_by_sender_rule_based(
-            shaped_clusters, current_user
+            shaped_clusters, current_user, include_current_user=include_current_user
         )
     try:
-        return _get_summarization().summarize_by_sender(shaped_clusters, current_user)
+        return _get_summarization().summarize_by_sender(
+            shaped_clusters, current_user, include_current_user=include_current_user
+        )
     except EnvironmentError as exc:
         logger.warning("Summarization unavailable (%s); using rule-based fallback", exc)
         return SummarizationService.summarize_by_sender_rule_based(
-            shaped_clusters, current_user
+            shaped_clusters, current_user, include_current_user=include_current_user
         )
 
 
@@ -121,12 +138,19 @@ def run_analysis_pipeline(
     logger.info("Step 3 structure: %d messages", len(structured_messages))
 
     # 4. Cluster
-    raw_clusters = _clustering.aggregate_messages(cleaned, current_user)
+    include_self = _solo_participant_chat(cleaned, current_user)
+    if include_self:
+        logger.info("Solo participant chat — including current_user messages for analysis")
+    raw_clusters = _clustering.aggregate_messages(
+        cleaned, current_user, include_current_user=include_self
+    )
     shaped = shape_clusters(raw_clusters)
     logger.info("Step 4 cluster: %d clusters", len(shaped))
 
     # 5. Summarize (cluster topic text only)
-    sender_summaries = _summarize_clusters(shaped, current_user)
+    sender_summaries = _summarize_clusters(
+        shaped, current_user, include_current_user=include_self
+    )
     logger.info("Step 5 summarize: %d senders", len(sender_summaries))
 
     # 6. Intent

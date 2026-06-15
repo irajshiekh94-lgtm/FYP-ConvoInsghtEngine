@@ -44,14 +44,14 @@ class MongoDB:
                 # Get database
                 self._db = self._client['convoinsight']
 
-                print("✅ Connected to MongoDB!")
+                print("Connected to MongoDB")
                 return self._db
 
             except ConnectionFailure as e:
-                print(f"❌ MongoDB connection failed: {e}")
+                print(f"MongoDB connection failed: {e}")
                 raise
             except Exception as e:
-                print(f"❌ Unexpected error: {e}")
+                print(f"MongoDB unexpected error: {e}")
                 raise
 
         return self._db
@@ -66,7 +66,7 @@ class MongoDB:
         """Close MongoDB connection"""
         if self._client is not None:
             self._client.close()
-            print("✅ MongoDB connection closed")
+            print("MongoDB connection closed")
 
 
 # Singleton instance

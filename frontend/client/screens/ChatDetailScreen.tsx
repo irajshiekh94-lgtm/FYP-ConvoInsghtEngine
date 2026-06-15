@@ -24,11 +24,17 @@ export default function ChatDetailScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<Route>();
   const { getChatById, isLoading, updateChat, markChatAsRead } = useChats();
+  const chatId = route.params.chatId;
 
   const [currentUser, setCurrentUser] = useState("Me");
   const [viewMode, setViewMode] = useState<ChatViewMode>("dashboard");
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | undefined>();
+  const [liveSummary, setLiveSummary] = useState<TwentyFourHourSummary | undefined>();
+
+  useEffect(() => {
+    setLiveSummary(undefined);
+  }, [chatId]);
 
   useEffect(() => {
     AsyncStorage.getItem("@ConvoInsight_whatsAppName").then((name) => {
@@ -36,7 +42,6 @@ export default function ChatDetailScreen() {
     });
   }, []);
 
-  const chatId = route.params.chatId;
   const chat = getChatById(chatId);
 
   useFocusEffect(
@@ -68,6 +73,7 @@ export default function ChatDetailScreen() {
         generatedAt: new Date().toISOString(),
       };
       await updateChat(chat.id, { twentyFourHourSummary: payload });
+      setLiveSummary(payload);
     } catch (err) {
       setSummaryError(err instanceof Error ? err.message : "Could not load summary");
     } finally {
@@ -120,6 +126,7 @@ export default function ChatDetailScreen() {
       {viewMode === "dashboard" ? (
         <ChatDashboardPanel
           chat={chat}
+          summary={liveSummary ?? chat.twentyFourHourSummary}
           summaryLoading={summaryLoading}
           summaryError={summaryError}
           onRefreshSummary={fetchSummary}

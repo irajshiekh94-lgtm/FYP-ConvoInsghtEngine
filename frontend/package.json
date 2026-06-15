@@ -4,7 +4,7 @@
   "private": true,
   "main": "client/index.js",
   "scripts": {
-    "start": "NODE_OPTIONS=--no-experimental-strip-types expo start",
+    "start": "cross-env NODE_OPTIONS=--no-experimental-strip-types expo start",
     "start:clear": "NODE_OPTIONS=--no-experimental-strip-types expo start --clear",
     "android": "NODE_OPTIONS=--no-experimental-strip-types expo start --android",
     "ios": "NODE_OPTIONS=--no-experimental-strip-types expo start --ios",
@@ -22,6 +22,7 @@
     "@react-navigation/native": "^7.1.6",
     "@react-navigation/native-stack": "^7.3.10",
     "@tanstack/react-query": "^5.74.4",
+    "cross-env": "^10.1.0",
     "expo": "~52.0.46",
     "expo-asset": "~11.0.5",
     "expo-blur": "~14.0.3",
@@ -32,6 +33,7 @@
     "expo-file-system": "~18.0.12",
     "expo-font": "~13.0.4",
     "expo-notifications": "~0.29.14",
+    "expo-speech": "~13.0.1",
     "expo-splash-screen": "~0.29.24",
     "expo-status-bar": "~2.0.1",
     "expo-web-browser": "~14.0.2",
@@ -50,3 +52,4 @@
     "typescript": "~5.8.3"
   }
 }
+

@@ -3,23 +3,32 @@ import { summarizeChat24h } from "@/lib/api-client";
 
 const SUMMARY_MESSAGE_LIMIT = 150;
 
+function normalizeTimestamp(value: string): string {
+  const trimmed = value?.trim();
+  if (!trimmed) return new Date().toISOString();
+  const parsed = Date.parse(trimmed);
+  if (!Number.isNaN(parsed)) return new Date(parsed).toISOString();
+  return trimmed;
+}
+
 export function buildSummarizePayload(chat: Chat) {
   const chatId = chat.jobId || chat.id;
   const chatType =
     chat.extractedData.metadata?.chat_type === "group" ? "group" : "individual";
 
   const recentMessages = [...chat.messages]
+    .filter((m) => m.content?.trim())
     .sort((a, b) => {
-      const ta = new Date(a.timestamp).getTime();
-      const tb = new Date(b.timestamp).getTime();
+      const ta = Date.parse(normalizeTimestamp(a.timestamp));
+      const tb = Date.parse(normalizeTimestamp(b.timestamp));
       if (!Number.isNaN(ta) && !Number.isNaN(tb)) return ta - tb;
       return a.timestamp.localeCompare(b.timestamp);
     })
     .slice(-SUMMARY_MESSAGE_LIMIT)
     .map((m: Message) => ({
       senderName: m.sender,
-      messageText: m.content,
-      timestamp: m.timestamp,
+      messageText: m.content.trim(),
+      timestamp: normalizeTimestamp(m.timestamp),
     }));
 
   return {

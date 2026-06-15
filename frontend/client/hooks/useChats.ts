@@ -83,10 +83,18 @@ export function useChats() {
   }, [chats]);
 
   const updateChat = useCallback(async (chatId: string, updates: Partial<Chat>) => {
-    const newChats = chats.map((chat) =>
-      chat.id === chatId ? { ...chat, ...updates } : chat
-    );
-    await saveChats(newChats);
+    try {
+      const stored = await AsyncStorage.getItem(CHATS_STORAGE_KEY);
+      const existingChats: StoredChat[] = stored
+        ? JSON.parse(stored)
+        : chats.map((c) => ({ ...c, extractedData: c.extractedData }));
+      const newChats = existingChats.map((chat) =>
+        chat.id === chatId ? normalizeChat({ ...chat, ...updates }) : normalizeChat(chat)
+      );
+      await saveChats(newChats);
+    } catch (error) {
+      console.error("Failed to update chat:", error);
+    }
   }, [chats]);
 
   const deleteChat = useCallback(async (chatId: string) => {

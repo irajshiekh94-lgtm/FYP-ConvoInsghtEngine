@@ -59,12 +59,13 @@ class ClusteringService:
         current_user: str,
         time_threshold: int = 5,
         similarity_threshold: float = 0.4,
+        include_current_user: bool = False,
     ) -> list:
         """
         Group incoming messages into clusters.
 
         Rules (in order):
-          1. Skip messages from current_user.
+          1. Skip messages from current_user (unless include_current_user).
           2. Skip media / deleted messages (no content to cluster on).
           3. Two consecutive messages belong to the same cluster if:
              a. time gap ≤ time_threshold minutes AND similarity ≥ similarity_threshold, OR
@@ -76,10 +77,10 @@ class ClusteringService:
         if not messages:
             return []
 
-        # Keep only non-current-user text messages
+        # Keep analyzable text messages (voice notes / solo memos include self)
         incoming = [
             msg for msg in messages
-            if msg.get("sender") != current_user
+            if (include_current_user or msg.get("sender") != current_user)
             and msg.get("messageType", "text") == "text"
             and msg.get("content", "").strip()
         ]
