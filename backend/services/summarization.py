@@ -7,6 +7,8 @@ import os
 import logging
 from typing import Optional
 
+from backend.services.voice_content import strip_voice_tags_from_summary
+
 logger = logging.getLogger(__name__)
 
 _local_pipeline = None
@@ -57,26 +59,43 @@ class SummarizationService:
             )
 
     def summarize_cluster(self, cluster_data: dict) -> str:
+        return strip_voice_tags_from_summary(self._summarize_cluster(cluster_data)).strip() or (
+            "No content to summarise."
+        )
+
+    def _summarize_cluster(self, cluster_data: dict) -> str:
         if not cluster_data.get("combined_text", "").strip():
             return "No content to summarise."
 
-        topic_text = cluster_data["combined_text"][:1500]
+        topic_text = strip_voice_tags_from_summary(cluster_data["combined_text"][:2000])
+        dialogue = topic_text
+        if not dialogue.strip() and cluster_data.get("messages"):
+            from backend.services.cluster_bridge import format_cluster_dialogue
+
+            dialogue = format_cluster_dialogue(cluster_data["messages"])[:2000]
+
+        senders = cluster_data.get("senders") or []
+        sender_list = ", ".join(senders) if senders else "Unknown"
+        multi_speaker = len(senders) > 1
+
         prompt = f"""You summarize ONE topic thread from a WhatsApp chat (already grouped by topic).
 
-Participants in this thread: {', '.join(cluster_data['senders'])}
+Participants in this thread: {sender_list}
 Messages in thread: {cluster_data['message_count']}
+{"Multiple speakers — preserve who said what." if multi_speaker else "Single speaker — note anyone they mention by name."}
 
-Normalized messages in this thread (do not quote them word-for-word):
+Conversation (chronological, speaker-labelled):
 ---
-{topic_text}
+{dialogue}
 ---
 
 Rules:
-- Summarize ONLY what this thread is about (theme + intent).
-- Use your own words. Maximum 2 short sentences.
-- Do NOT copy long phrases from the messages.
-- Do NOT invent names, dates, amounts, or decisions not implied above.
-- If the thread is only greetings, say it is a brief check-in.
+- Summarize the thread in 2-3 sentences using your own words.
+- ALWAYS attribute actions, requests, and decisions to the correct speaker by name.
+- Format assignments clearly when present (e.g. "Alice asked Bob to send the invoice by Friday").
+- If one speaker quotes or refers to another person, keep both names in the summary.
+- Do NOT invent names, dates, or facts not in the dialogue.
+- Do NOT copy long verbatim quotes from the messages.
 
 Summary:"""
 

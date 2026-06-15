@@ -16,6 +16,8 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
 
+from backend.services.voice_content import strip_voice_tags_from_summary
+
 logger = logging.getLogger(__name__)
 
 MAX_PROMPT_MESSAGES = int(os.getenv("SUMMARY_PROMPT_MESSAGES", "60"))
@@ -47,25 +49,29 @@ PERIOD_CONTEXT = {
 
 EXECUTIVE_SUMMARY_PROMPT = """You are a business analyst summarizing WhatsApp chat activity from {time_context}.
 
+PARTICIPANTS IN THIS CHAT: {participants}
+
 RULES:
-- Write ONE coherent executive paragraph (3-6 sentences). Do NOT list messages one by one.
-- Do NOT quote every speaker unless a person is central to a decision or assignment.
-- Merge related discussions into a single narrative.
-- Extract tasks, blockers, decisions, assignments, deadlines, and concerns.
-- Remove greetings, emojis, and casual chat filler.
-- Focus on actionable, business-relevant information.
+- Write ONE coherent executive paragraph (4-7 sentences).
+- Preserve WHO said WHAT — attribute statements, requests, decisions, and tasks to the correct speaker by name.
+- When someone assigns work, write it as "Name A asked Name B to …" or "Name A committed to … by [deadline]".
+- If a speaker mentions or quotes another person, include both names; do not collapse into vague "they discussed".
+- Merge related points into a narrative, but never lose speaker attribution when names appear in the messages.
+- Extract tasks, blockers, decisions, assignments, deadlines, and concerns with owners when known.
+- Remove greetings and filler, but keep factual content and names.
 - Open with a brief time/context phrase appropriate to the messages (do not invent dates).
+{voice_note_hint}
 
 CHAT TYPE: {chat_type}
-MESSAGES (chronological):
+MESSAGES (chronological, each line is "Speaker: message"):
 {messages_block}
 
 Respond with ONLY valid JSON (no markdown fences) in this exact shape:
 {{
-  "summary": "executive paragraph here",
-  "keyDecisions": ["decision 1"],
-  "assignedTasks": ["task with owner if known"],
-  "pendingActions": ["action still needed"],
+  "summary": "executive paragraph with clear speaker attribution",
+  "keyDecisions": ["decision with who decided"],
+  "assignedTasks": ["Owner: task — deadline if stated"],
+  "pendingActions": ["action still needed with owner if known"],
   "blockers": ["blocker or risk"],
   "peopleMentioned": ["name1", "name2"],
   "sentiment": "Positive" | "Neutral" | "Negative"
@@ -202,10 +208,14 @@ class LlamaService:
 
         time_context = PERIOD_CONTEXT.get(period, PERIOD_CONTEXT["recent"])
         messages_block = self._format_messages_block(messages)
+        participants = self._participant_list(messages)
+        voice_note_hint = self._voice_note_hint(messages, participants)
         prompt = EXECUTIVE_SUMMARY_PROMPT.format(
             chat_type=chat_type,
             time_context=time_context,
             messages_block=messages_block,
+            participants=participants,
+            voice_note_hint=voice_note_hint,
         )
         raw = self.generate(prompt, max_tokens=4096, temperature=0.2)
         if not raw.strip():
@@ -305,12 +315,33 @@ class LlamaService:
                 status="api_error",
             ) from exc
 
+    def _participant_list(self, messages: List[Dict[str, Any]]) -> str:
+        names: list[str] = []
+        seen: set[str] = set()
+        for msg in messages:
+            name = (msg.get("senderName") or msg.get("sender") or "Unknown").strip()
+            if name and name.lower() not in seen:
+                seen.add(name.lower())
+                names.append(name)
+        return ", ".join(names) if names else "Unknown"
+
+    @staticmethod
+    def _voice_note_hint(messages: List[Dict[str, Any]], participants: str) -> str:
+        if "," not in participants and len(participants.split()) <= 3:
+            return (
+                "- This may be voice-note or monologue content: summarize what the speaker said, "
+                "who they mention, and any tasks or deadlines they stated; use third-person names "
+                "for people referenced in the transcript."
+            )
+        return ""
+
     def _format_messages_block(self, messages: List[Dict[str, Any]]) -> str:
         tail = messages[-MAX_PROMPT_MESSAGES:] if len(messages) > MAX_PROMPT_MESSAGES else messages
         lines = []
         for msg in tail:
-            sender = msg.get("senderName") or msg.get("sender", "Unknown")
+            sender = (msg.get("senderName") or msg.get("sender") or "Unknown").strip()
             text = (msg.get("messageText") or msg.get("content", "")).strip()
+            text = strip_voice_tags_from_summary(text)
             if not text:
                 continue
             if len(text) > MAX_MESSAGE_CHARS:
@@ -318,7 +349,8 @@ class LlamaService:
             ts = msg.get("timestamp", "")
             if hasattr(ts, "isoformat"):
                 ts = ts.isoformat()
-            lines.append(f"[{ts}] {sender}: {text}")
+            ts_prefix = f"[{ts}] " if ts else ""
+            lines.append(f"{ts_prefix}{sender}: {text}")
         return "\n".join(lines) if lines else "(no message content)"
 
     @staticmethod
@@ -395,12 +427,16 @@ class LlamaService:
         def _as_list(key: str) -> List[str]:
             val = data.get(key, [])
             if not isinstance(val, list):
-                return [str(val)] if val else []
-            return [str(item).strip() for item in val if str(item).strip()]
+                val = [val] if val else []
+            items = [strip_voice_tags_from_summary(str(item)).strip() for item in val]
+            return [item for item in items if item]
+
+        summary_text = strip_voice_tags_from_summary(
+            str(data.get("summary", "")).strip()
+        ).strip()
 
         return {
-            "summary": str(data.get("summary", "")).strip()
-            or "No summary could be generated.",
+            "summary": summary_text or "No summary could be generated.",
             "keyDecisions": _as_list("keyDecisions"),
             "assignedTasks": _as_list("assignedTasks"),
             "pendingActions": _as_list("pendingActions"),

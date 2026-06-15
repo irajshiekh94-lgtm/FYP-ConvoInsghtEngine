@@ -143,7 +143,12 @@ export default function ImportChatScreen() {
           const time = now
             .toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
             .toLowerCase();
-          const line = `${date}, ${time} - ${userName}: ${text.trim()}`;
+          const voiceSender =
+            voiceNotes.length > 1
+              ? `${userName} (voice ${i + 1})`
+              : `${userName} (voice note)`;
+          const trimmed = text.trim();
+          const line = `${date}, ${time} - ${voiceSender}: ${trimmed}`;
           chatContent += chatContent.trim() ? `\n${line}` : line;
         }
       }

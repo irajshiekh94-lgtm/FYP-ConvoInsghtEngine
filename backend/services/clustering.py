@@ -77,13 +77,18 @@ class ClusteringService:
         if not messages:
             return []
 
-        # Keep analyzable text messages (voice notes / solo memos include self)
-        incoming = [
-            msg for msg in messages
-            if (include_current_user or msg.get("sender") != current_user)
-            and msg.get("messageType", "text") == "text"
-            and msg.get("content", "").strip()
-        ]
+        def _include_message(msg: dict) -> bool:
+            msg_type = msg.get("messageType", "text")
+            if msg_type not in ("text", "voice"):
+                return False
+            if not msg.get("content", "").strip():
+                return False
+            sender = msg.get("sender")
+            if include_current_user or sender != current_user:
+                return True
+            return msg_type == "voice"
+
+        incoming = [msg for msg in messages if _include_message(msg)]
 
         if not incoming:
             return []

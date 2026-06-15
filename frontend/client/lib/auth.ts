@@ -122,7 +122,7 @@ export async function sendOtp(
     });
   } catch {
     throw new AuthApiError(
-      `Cannot reach the server at ${baseUrl}. Start the backend and check EXPO_PUBLIC_API_URL in frontend/.env`
+      `Cannot reach the server at ${baseUrl}. Start the backend with --host 0.0.0.0 --port 8000 (same Wi‑Fi as phone; URL is auto-detected in dev).`
     );
   }
 

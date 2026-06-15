@@ -4,8 +4,9 @@
   "private": true,
   "main": "client/index.js",
   "scripts": {
-    "start": "cross-env NODE_OPTIONS=--no-experimental-strip-types expo start",
-    "start:clear": "NODE_OPTIONS=--no-experimental-strip-types expo start --clear",
+    "prestart": "node scripts/print-dev-api.js",
+    "start": "cross-env NODE_OPTIONS=--no-experimental-strip-types expo start --lan",
+    "start:clear": "cross-env NODE_OPTIONS=--no-experimental-strip-types expo start --lan --clear",
     "android": "NODE_OPTIONS=--no-experimental-strip-types expo start --android",
     "ios": "NODE_OPTIONS=--no-experimental-strip-types expo start --ios",
     "web": "NODE_OPTIONS=--no-experimental-strip-types expo start --web"

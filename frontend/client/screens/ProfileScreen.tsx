@@ -16,6 +16,7 @@ import type { ThemePreference } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { useSettings } from "@/hooks/useSettings";
 import { logout, getStoredUser } from "@/lib/auth";
+import { getApiUrlDebugInfo } from "@/lib/query-client";
 import {
   clearUrgentNotifications,
   ensureNotificationPermissions,
@@ -152,6 +153,7 @@ export default function ProfileScreen() {
 
   const [userName, setUserName] = useState("ConvoInsight User");
   const [userEmail, setUserEmail] = useState("");
+  const apiDebug = __DEV__ ? getApiUrlDebugInfo() : null;
 
   useEffect(() => {
     getStoredUser().then((user) => {
@@ -295,6 +297,19 @@ export default function ProfileScreen() {
         />
       </SettingsSection>
 
+      {apiDebug ? (
+        <SettingsSection title="DEVELOPER">
+          <View style={[styles.devBox, { backgroundColor: theme.backgroundSecondary }]}>
+            <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+              API ({apiDebug.source})
+            </ThemedText>
+            <ThemedText type="small" style={{ color: theme.text, marginTop: 4 }}>
+              {apiDebug.url.replace(/\/$/, "")}
+            </ThemedText>
+          </View>
+        </SettingsSection>
+      ) : null}
+
       <View style={styles.footer}>
         <ThemedText type="caption" style={{ color: theme.textSecondary }}>
           ConvoInsight v1.0.0
@@ -365,5 +380,9 @@ const styles = StyleSheet.create({
   },
   themePickerControl: {
     marginBottom: 0,
+  },
+  devBox: {
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
   },
 });

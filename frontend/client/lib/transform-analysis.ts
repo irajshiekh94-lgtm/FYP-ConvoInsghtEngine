@@ -22,6 +22,7 @@ import {
   EMPTY_PRIORITIES,
   EMPTY_SENTIMENT,
 } from "@/lib/analysis-schema";
+import { stripVoiceImportTag } from "@/lib/strip-voice-tag";
 
 export type { AnalysisResult, JobResultResponse } from "@/lib/analysis-schema";
 
@@ -104,7 +105,10 @@ function mapMessages(
     .map((m, i) => ({
       id: `${chatId}_msg_${i}`,
       sender: m.sender,
-      content: m.content,
+      content: stripVoiceImportTag(
+        m.content,
+        /\(voice/i.test(m.sender) || m.messageType === "voice"
+      ),
       timestamp: m.timestamp || m.rawTimestamp || now,
     }));
 }

@@ -113,6 +113,9 @@ def classify_message(content):
     if "<This message was deleted>" in content:
         return "deleted"
 
+    if content.startswith("[Voice note]"):
+        return "voice"
+
     return "text"
 
 
@@ -152,7 +155,7 @@ def _parse_lines(lines: List[str]) -> dict:
 
             current_message = {
                 "sender": sender,
-                "content": content if message_type == "text" else "",
+                "content": content if message_type in ("text", "voice") else "",
                 "timestamp": timestamp,
                 "messageType": message_type,
                 "rawTimestamp": f"{date_str} {time_str}"

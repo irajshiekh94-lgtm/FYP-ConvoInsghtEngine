@@ -158,6 +158,11 @@ def process_audio_file(
     """
     stt = transcribe_audio(audio_path, language)
     raw = stt["text"]
+    segments = stt.get("segments") or []
+    if segments and len(segments) > 1:
+        parts = [seg.get("text", "").strip() for seg in segments if seg.get("text", "").strip()]
+        if parts:
+            raw = "\n".join(parts)
 
     if normalize and raw.strip():
         norm = full_normalize(raw, use_ml=use_ml)

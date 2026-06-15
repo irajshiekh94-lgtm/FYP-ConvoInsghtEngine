@@ -6,9 +6,8 @@ function wrapNetworkError(error: unknown, url: string): Error {
     return new Error(
       `Cannot reach the API at ${url}. ` +
         "Start the backend: uvicorn backend.server:app --reload --host 0.0.0.0 --port 8000. " +
-        "In frontend/.env set EXPO_PUBLIC_API_URL — use http://localhost:8000 on this PC, " +
-        "http://10.0.2.2:8000 for Android emulator, or http://YOUR_PC_LAN_IP:8000 for a phone " +
-        "(run ipconfig on Windows and use your IPv4 address; phone and PC must be on the same Wi‑Fi)."
+        "On a phone, use the same Wi‑Fi as this PC — the app auto-detects the API IP from Expo. " +
+        "Set EXPO_PUBLIC_API_URL only for a fixed cloud/production server."
     );
   }
   return error instanceof Error ? error : new Error(String(error));

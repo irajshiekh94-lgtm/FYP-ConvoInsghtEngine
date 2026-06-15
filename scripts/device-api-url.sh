@@ -1,5 +1,5 @@
 #!/bin/bash
-# Print and optionally write EXPO_PUBLIC_API_URL for physical-device testing.
+# Print LAN IP for manual testing. Dev app auto-detects IP from Expo — no .env write needed.
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 IP=""
@@ -8,12 +8,13 @@ for iface in en0 en1; do
   [ -n "$IP" ] && break
 done
 if [ -z "$IP" ]; then
-  echo "Could not detect LAN IP. Set EXPO_PUBLIC_API_URL manually in frontend/.env"
+  echo "Could not detect LAN IP."
   exit 1
 fi
 URL="http://${IP}:8000"
-echo "API URL for physical device: $URL"
+echo "Backend should listen on: $URL"
+echo "Expo app auto-detects this in dev — you do NOT need to edit frontend/.env."
 if [ "${1:-}" = "--write" ]; then
-  printf '%s\n' "EXPO_PUBLIC_API_URL=$URL" > "$ROOT/frontend/.env"
-  echo "Wrote $ROOT/frontend/.env"
+  printf '%s\n' "# EXPO_PUBLIC_API_URL=$URL" > "$ROOT/frontend/.env"
+  echo "Wrote minimal $ROOT/frontend/.env (auto-detect enabled)"
 fi

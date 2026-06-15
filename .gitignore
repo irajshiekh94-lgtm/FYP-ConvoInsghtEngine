@@ -17,6 +17,8 @@ build/
 
 
 .env
+env
+*.env
 # IDE
 .vscode/
 .idea/
