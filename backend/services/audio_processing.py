@@ -15,6 +15,30 @@ AudioSegment.converter = which("ffmpeg")
 AudioSegment.ffprobe = which("ffprobe")
 
 
+def convert_to_wav16k_mono(input_path: str) -> str:
+    """
+    Light preprocessing for Whisper: convert to 16 kHz mono WAV only.
+
+    Whisper is trained on real-world noisy audio and generally transcribes the
+    near-original signal MORE accurately than a denoised / silence-trimmed one.
+    So by default we only fix the sample rate and channel count.
+
+    Returns path to the converted WAV (written next to the original).
+    """
+    if not os.path.exists(input_path):
+        raise FileNotFoundError(f"Audio file not found: {input_path}")
+    if which("ffmpeg") is None:
+        raise RuntimeError("ffmpeg not found. Install it and make sure it is on PATH.")
+
+    base, _ = os.path.splitext(input_path)
+    output_path = f"{base}_16k.wav"
+
+    audio = AudioSegment.from_file(input_path)
+    audio = audio.set_channels(1).set_frame_rate(16_000)
+    audio.export(output_path, format="wav")
+    return output_path
+
+
 def normalize_audio(input_path: str) -> str:
     """
     Pre-process an audio file for Whisper:
@@ -69,21 +93,34 @@ def normalize_audio(input_path: str) -> str:
 
         # ── Step 3: silence trimming ─────────────────────────────────────────
         audio = AudioSegment.from_wav(temp_wav)
-        chunks = silence.split_on_silence(
-            audio,
-            min_silence_len=1_200,          # ms — only cut pauses ≥ 1.2 s
-            silence_thresh=audio.dBFS - 20, # adaptive threshold
-            keep_silence=500,               # ms of padding around each chunk
-        )
+        original_ms = len(audio)
 
-        if chunks:
-            cleaned = AudioSegment.empty()
-            for chunk in chunks:
-                cleaned += chunk
-        else:
-            # No chunks found means the whole file is below the silence
-            # threshold — treat the original as already clean
+        # Short clips (≤ 8 s) are left intact — silence trimming on a brief
+        # voice note can remove almost all of it and break transcription.
+        SHORT_CLIP_MS = 8_000
+        if original_ms <= SHORT_CLIP_MS:
             cleaned = audio
+        else:
+            chunks = silence.split_on_silence(
+                audio,
+                min_silence_len=1_200,          # ms — only cut pauses ≥ 1.2 s
+                silence_thresh=audio.dBFS - 20, # adaptive threshold
+                keep_silence=500,               # ms of padding around each chunk
+            )
+
+            if chunks:
+                cleaned = AudioSegment.empty()
+                for chunk in chunks:
+                    cleaned += chunk
+            else:
+                # No chunks found means the whole file is below the silence
+                # threshold — treat the original as already clean
+                cleaned = audio
+
+            # Guard against over-trimming: if we cut more than half the audio,
+            # the threshold was too aggressive — keep the untrimmed version.
+            if len(cleaned) < original_ms * 0.5:
+                cleaned = audio
 
         cleaned.export(output_path, format="wav")
 

@@ -4,6 +4,7 @@ Classifies a cluster summary into one of the defined intent labels using Gemini.
 """
 
 import os
+import re
 
 try:
     import google.generativeai as genai
@@ -38,18 +39,34 @@ def _get_model():
     return _model
 
 
+def _is_only_greeting(text: str) -> bool:
+    """True when the message is essentially just a greeting and nothing else."""
+    stripped = re.sub(r"[^a-z\s]", "", text.lower()).strip()
+    words = stripped.split()
+    if not words or len(words) > 6:
+        return False
+    greeting_words = {
+        "hello", "hi", "hey", "good", "morning", "evening", "afternoon",
+        "how", "are", "you", "doing", "whats", "up", "salam", "assalam",
+        "aoa", "yo", "hiya",
+    }
+    return all(w in greeting_words for w in words)
+
+
 def _rule_based_intent(summary_text: str) -> str:
     lower = summary_text.lower()
-    if any(w in lower for w in ["hello", "hi ", "hey ", "good morning", "good evening", "how are you"]):
-        return "greeting"
-    if any(w in lower for w in ["angry", "upset", "complaint", "frustrated", "unacceptable", "asap", "urgent"]):
+    # Actionable intents take precedence over greetings: a message that opens
+    # with "Hi" but asks for something is a request/question, not a greeting.
+    if any(w in lower for w in ["angry", "upset", "complaint", "frustrated", "unacceptable", "asap", "urgent", "not working", "issue", "problem"]):
         return "complaint"
-    if "?" in summary_text or any(w in lower for w in ["can you", "could you", "please send", "when will", "how much"]):
-        return "question"
-    if any(w in lower for w in ["need", "want", "please", "send me", "confirm", "deadline", "invoice", "order"]):
+    if any(w in lower for w in ["need", "want", "please", "send me", "send the", "confirm", "deadline", "invoice", "order", "kindly", "make sure", "remind", "meeting", "meet", "gather", "schedule", "appointment", "let's", "lets"]):
         return "request"
-    if any(w in lower for w in ["update", "fyi", "just to let", "completed", "done", "received"]):
+    if "?" in summary_text or any(w in lower for w in ["can you", "could you", "when will", "how much", "what time", "where is", "do you"]):
+        return "question"
+    if any(w in lower for w in ["update", "fyi", "just to let", "completed", "done", "received", "sharing", "note that"]):
         return "information"
+    if _is_only_greeting(summary_text):
+        return "greeting"
     return "other"
 
 
@@ -65,10 +82,6 @@ def classify_intent(summary_text: str) -> str:
     """
     if not summary_text or not summary_text.strip():
         return "other"
-
-    lower = summary_text.lower()
-    if any(w in lower for w in ["hello", "hi ", "hey ", "good morning", "good evening", "how are you"]):
-        return "greeting"
 
     use_gemini = os.getenv("ENABLE_GEMINI_INTENT", "0").lower() in (
         "1",
@@ -123,5 +136,10 @@ def classify_all(sender_summaries: dict) -> dict:
     """
     for sender, data in sender_summaries.items():
         for cluster in data.get("clusters", []):
-            cluster["intent"] = classify_intent(cluster.get("summary", ""))
+            # Classify on the ORIGINAL message text — it preserves intent cues
+            # ("?", "please", "deadline", …) that the abstractive summary drops.
+            basis = (cluster.get("original_text") or "").strip()
+            if not basis:
+                basis = cluster.get("summary", "")
+            cluster["intent"] = classify_intent(basis)
     return sender_summaries

@@ -4,6 +4,7 @@ Uses Meta Llama (Ollama / Groq / Together) to summarise clustered WhatsApp messa
 """
 
 import os
+import re
 import logging
 from typing import Optional
 
@@ -28,15 +29,39 @@ except Exception:
     LLAMA_AVAILABLE = False
 
 
+_DETAIL_PATTERN = re.compile(
+    r"(\d{1,2}\s*(?::\d{2})?\s*(?:am|pm))"          # 5pm, 5:30 pm
+    r"|(\d{1,2}:\d{2})"                              # 17:00
+    r"|\b(today|tomorrow|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"
+    r"|\b(deadline|asap|urgent|meeting|meet|call|gather|schedule|appointment)\b"
+    r"|\b(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b"     # dates
+    r"|\b(\$?\d+(?:\.\d+)?%?)\b",                    # numbers / amounts
+    re.IGNORECASE,
+)
+
+
+def _split_sentences(text: str) -> list:
+    parts = re.split(r"(?<=[.!?])\s+|\n+", text)
+    return [p.strip() for p in parts if p.strip()]
+
+
 def _rule_based_summary(cluster_data: dict) -> str:
     combined = cluster_data.get("combined_text", "").strip()
     senders = cluster_data.get("senders", [])
     who = ", ".join(senders) if senders else "Someone"
     if len(combined) < 20:
         return f"{who} sent a brief message."
-    snippet = combined[:200]
-    suffix = "…" if len(combined) > 200 else ""
-    return f"{who} discussed: {snippet}{suffix}"
+
+    # Prioritise sentences that carry concrete details (times, dates, actions),
+    # so specifics like "5pm" or "meeting today" are never truncated away.
+    sentences = _split_sentences(combined)
+    detail_sentences = [s for s in sentences if _DETAIL_PATTERN.search(s)]
+    chosen = detail_sentences or sentences
+
+    snippet = " ".join(chosen)
+    if len(snippet) > 280:
+        snippet = snippet[:280].rstrip() + "…"
+    return f"{who} discussed: {snippet}"
 
 
 class SummarizationService:
@@ -92,7 +117,9 @@ Conversation (chronological, speaker-labelled):
 Rules:
 - Summarize the thread in 2-3 sentences using your own words.
 - ALWAYS attribute actions, requests, and decisions to the correct speaker by name.
-- Format assignments clearly when present (e.g. "Alice asked Bob to send the invoice by Friday").
+- PRESERVE every concrete detail exactly as stated: times (e.g. 5pm), dates, days (today/tomorrow/Friday), locations/venues, numbers, amounts, and deadlines. Never drop a time or date that appears in the dialogue.
+- Format assignments clearly when present (e.g. "Alice asked Bob to send the invoice by Friday 5pm").
+- For meetings/events, always include WHEN and WHERE if mentioned (e.g. "meeting today at 5pm").
 - If one speaker quotes or refers to another person, keep both names in the summary.
 - Do NOT invent names, dates, or facts not in the dialogue.
 - Do NOT copy long verbatim quotes from the messages.
@@ -115,7 +142,7 @@ Summary:"""
 
         if self.llama_available and llama_service is not None:
             try:
-                return llama_service.generate(prompt, max_tokens=120, temperature=0.3).strip()
+                return llama_service.generate(prompt, max_tokens=220, temperature=0.2).strip()
             except LlamaServiceError as e:
                 logger.error("[SummarizationService] Llama error: %s", e)
 

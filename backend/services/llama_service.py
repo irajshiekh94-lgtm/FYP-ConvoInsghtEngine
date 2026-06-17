@@ -57,9 +57,12 @@ RULES:
 - When someone assigns work, write it as "Name A asked Name B to …" or "Name A committed to … by [deadline]".
 - If a speaker mentions or quotes another person, include both names; do not collapse into vague "they discussed".
 - Merge related points into a narrative, but never lose speaker attribution when names appear in the messages.
+- PRESERVE every concrete detail exactly as stated: times (e.g. 5pm), dates, days (today/tomorrow/Friday), locations/venues, numbers, amounts, and deadlines. Never drop a time or date that appears in the messages.
+- For any meeting or event, always state WHEN and WHERE if mentioned (e.g. "meeting today at 5pm").
 - Extract tasks, blockers, decisions, assignments, deadlines, and concerns with owners when known.
-- Remove greetings and filler, but keep factual content and names.
+- Remove greetings and filler, but keep factual content, names, times, dates, and places.
 - Open with a brief time/context phrase appropriate to the messages (do not invent dates).
+ 
 {voice_note_hint}
 
 CHAT TYPE: {chat_type}

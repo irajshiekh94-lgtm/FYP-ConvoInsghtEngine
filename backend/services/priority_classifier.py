@@ -7,41 +7,58 @@ from typing import Dict, List, Tuple
 
 from backend.schemas.analysis import PrioritiesOut, PriorityItem
 
-# Intent → default priority bucket
+# Intent → default priority bucket (time cues below can raise this)
 _INTENT_BUCKET = {
-    "complaint": "urgent",
-    "request": "urgent",
-    "question": "moderate",
-    "information": "low",
+    "complaint": "urgent",   # problems / dissatisfaction need attention
+    "request": "moderate",   # someone wants something done → moderate by default
+    "question": "moderate",  # needs an answer
+    "information": "low",     # FYI / status updates
     "greeting": "low",
     "other": "low",
 }
 
-# Keywords that bump priority up one level (checked on original text)
-_URGENT_KEYWORDS = (
-    "urgent",
+_BUCKET_RANK = {"low": 0, "moderate": 1, "urgent": 2}
+_RANK_BUCKET = {0: "low", 1: "moderate", 2: "urgent"}
+
+# Time-sensitive cues. Anything happening NOW/TODAY is the most urgent; things
+# scheduled for TOMORROW are moderate; later days carry no extra urgency.
+_TODAY_KEYWORDS = (
+    "today",
+    "tonight",
+    "right now",
+    "now",
     "asap",
     "immediately",
-    "deadline",
+    "urgent",
     "emergency",
     "critical",
-    "today",
+    "deadline",
+)
+_TOMORROW_KEYWORDS = (
+    "tomorrow",
+    "tmrw",
+    "next morning",
 )
 
 
 def _bump_bucket(bucket: str) -> str:
-    if bucket == "low":
-        return "moderate"
-    if bucket == "moderate":
-        return "urgent"
-    return "urgent"
+    return _RANK_BUCKET[min(_BUCKET_RANK[bucket] + 1, 2)]
+
+
+def _at_least(bucket: str, floor: str) -> str:
+    return _RANK_BUCKET[max(_BUCKET_RANK[bucket], _BUCKET_RANK[floor])]
 
 
 def _cluster_bucket(intent: str, original_text: str) -> str:
     bucket = _INTENT_BUCKET.get(intent, "low")
     lower = original_text.lower()
-    if any(kw in lower for kw in _URGENT_KEYWORDS):
-        bucket = _bump_bucket(bucket)
+
+    # Today / now / asap → urgent. Tomorrow → at least moderate.
+    if any(kw in lower for kw in _TODAY_KEYWORDS):
+        bucket = "urgent"
+    elif any(kw in lower for kw in _TOMORROW_KEYWORDS):
+        bucket = _at_least(bucket, "moderate")
+
     return bucket
 
 

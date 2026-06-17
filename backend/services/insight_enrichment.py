@@ -33,6 +33,33 @@ _DATE_RE = re.compile(
 _NAME_RE = re.compile(r"\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?\b")
 _WORD_RE = re.compile(r"\b[a-zA-Z][a-zA-Z]{3,}\b")
 
+# Capitalized words that are NOT people — prevents false "person" entities from
+# sentence-initial words, days, months, and common chat words.
+_NOT_NAMES = {
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    "january", "february", "march", "april", "may", "june", "july", "august",
+    "september", "october", "november", "december",
+    "today", "tomorrow", "tonight", "yesterday", "morning", "evening", "afternoon",
+    "hello", "hello", "hey", "thanks", "thank", "please", "okay", "yes", "yeah",
+    "sure", "good", "great", "meeting", "meet", "call", "report", "invoice",
+    "order", "deadline", "urgent", "asap", "the", "this", "that", "there", "here",
+    "what", "when", "where", "which", "who", "how", "why", "also", "and", "but",
+    "for", "with", "from", "your", "you", "are", "can", "could", "would", "should",
+    "will", "have", "need", "want", "send", "let", "lets", "got", "get", "see",
+    "note", "reminder", "update", "done", "now", "then", "soon",
+    "tell", "ask", "asked", "call", "called", "remind", "confirm", "bring",
+    "join", "make", "give", "take", "come", "going", "about",
+}
+
+
+def _looks_like_name(token: str) -> bool:
+    """Heuristic: a capitalized token is a candidate name only if it isn't a
+    common word, day, month, or sentence-starter noise word."""
+    for part in token.split():
+        if part.lower() in _NOT_NAMES:
+            return False
+    return True
+
 _STOPWORDS = {
     "about",
     "also",
@@ -79,6 +106,9 @@ _NEGATIVE = {
 def _count_entities(messages: List[dict]) -> Dict[tuple, int]:
     counts: Counter[tuple] = Counter()
     senders = {m.get("sender", "") for m in messages}
+    sender_first_names = {s.split()[0].lower() for s in senders if s}
+
+    name_candidates: Counter[str] = Counter()
 
     for msg in messages:
         text = msg.get("content", "") or ""
@@ -91,8 +121,24 @@ def _count_entities(messages: List[dict]) -> Dict[tuple, int]:
         for value in _DATE_RE.findall(text):
             counts[(value.strip(), "date")] += 1
         for value in _NAME_RE.findall(text):
-            if value not in senders:
-                counts[(value.strip(), "person")] += 1
+            cleaned = value.strip()
+            if cleaned in senders:
+                continue
+            # Count each capitalized word on its own so a real name mentioned
+            # several times (even inside "Tell Sara") is recognised, while one-off
+            # sentence-starter capitals stay below the threshold.
+            for token in cleaned.split():
+                if token in senders:
+                    continue
+                if _looks_like_name(token):
+                    name_candidates[token] += 1
+
+    # Keep a name only if it's clearly a real person: either a known sender's
+    # first name, or it appears at least twice (single stray capitals, which are
+    # usually sentence-starters or STT hallucinations, are dropped).
+    for name, freq in name_candidates.items():
+        if freq >= 2 or name.lower() in sender_first_names:
+            counts[(name, "person")] += freq
 
     return dict(counts)
 

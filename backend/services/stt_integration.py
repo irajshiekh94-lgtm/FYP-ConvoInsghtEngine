@@ -13,13 +13,28 @@ import soundfile as sf
 import torch
 import whisper
 
-from .audio_processing import normalize_audio
+from .audio_processing import convert_to_wav16k_mono, normalize_audio
 from .text_normalizer import full_normalize
 
 
 # ── Whisper singleton ─────────────────────────────────────────────────────────
 _whisper_model = None
-WHISPER_MODEL_SIZE = "base"   # swap to "small" or "medium" for better accuracy
+# English-only deployment uses the multilingual "base" model with the language
+# forced to English (see DEFAULT_LANGUAGE). Override with WHISPER_MODEL_SIZE=small
+# or =small.en for higher accuracy (larger download).
+WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "base").strip() or "base"
+
+# Heavy denoise/silence-trim usually HURTS Whisper accuracy; off by default.
+HEAVY_AUDIO_PREPROCESS = os.getenv("HEAVY_AUDIO_PREPROCESS", "0").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
+# English-only deployment: force the language so Whisper doesn't auto-detect
+# (auto-detect can mislabel English audio and hurt accuracy). Set STT_LANGUAGE=""
+# to re-enable auto-detection / multilingual support.
+DEFAULT_LANGUAGE = os.getenv("STT_LANGUAGE", "en").strip() or None
 
 
 def load_whisper_model(model_size: str = WHISPER_MODEL_SIZE) -> whisper.Whisper:
@@ -83,22 +98,43 @@ def transcribe_audio(audio_path: str, language: Optional[str] = None) -> dict:
     """
     model = load_whisper_model()
 
-    # Try preprocessing; fall back to original if it fails
+    # English-only by default (configurable). Overrides None to "en".
+    if language is None:
+        language = DEFAULT_LANGUAGE
+
+    # Light preprocessing (16 kHz mono) by default — best for Whisper accuracy.
+    # Heavy denoise/silence-trim only if explicitly enabled.
     cleaned_path: Optional[str] = None
     try:
-        cleaned_path = normalize_audio(audio_path)
+        if HEAVY_AUDIO_PREPROCESS:
+            cleaned_path = normalize_audio(audio_path)
+        else:
+            cleaned_path = convert_to_wav16k_mono(audio_path)
         audio_to_use = cleaned_path
-        print(f"[STT] Audio preprocessed → {cleaned_path}")
+        print(f"[STT] Audio prepared → {cleaned_path}")
     except Exception as exc:
         print(f"[STT] Preprocessing skipped ({exc}), using original.")
         audio_to_use = audio_path
 
+    decode_opts = dict(
+        language=language,
+        fp16=torch.cuda.is_available(),
+        task="transcribe",
+        beam_size=5,                    # beam search → fewer errors than greedy
+        best_of=5,
+        temperature=(0.0, 0.2, 0.4),    # fallback temps if decoding gets stuck
+        condition_on_previous_text=False,  # avoids snowballing hallucinations
+        no_speech_threshold=0.6,
+    )
+
     try:
-        result = model.transcribe(
-            audio_to_use,
-            language=language,
-            fp16=torch.cuda.is_available(),
-        )
+        result = model.transcribe(audio_to_use, **decode_opts)
+
+        # Fallback: if preprocessing produced empty/blank output (common on very
+        # short or quiet clips), retry once on the untouched original audio.
+        if not result.get("text", "").strip() and audio_to_use != audio_path:
+            print("[STT] Empty transcript from cleaned audio — retrying on original.")
+            result = model.transcribe(audio_path, **decode_opts)
     finally:
         # Clean up the preprocessed file whether transcription succeeded or not
         if cleaned_path and cleaned_path != audio_path and os.path.exists(cleaned_path):

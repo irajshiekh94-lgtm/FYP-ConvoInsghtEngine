@@ -9,7 +9,7 @@ from backend.schemas.analysis import ActionItem, PrioritiesOut
 
 _ACTION_INTENTS = {"question", "request", "complaint"}
 
-_MEETING_PATTERN = ("meet", "meeting", "call", "schedule", "zoom", "calendar")
+_MEETING_PATTERN = ("meet", "meeting", "call", "schedule", "zoom", "calendar", "gather", "appointment")
 _ORDER_PATTERN = ("order", "purchase", "invoice", "delivery", "payment", "units")
 
 
@@ -23,12 +23,31 @@ def _intent_to_type(intent: str) -> str:
     return "task"
 
 
+_TODAY_CUES = ("today", "tonight", "now", "asap", "immediately", "urgent", "deadline", "emergency", "critical")
+_TOMORROW_CUES = ("tomorrow", "tmrw")
+
+_URGENCY_RANK = {"low": 0, "medium": 1, "high": 2}
+_RANK_URGENCY = {0: "low", 1: "medium", 2: "high"}
+
+
 def _intent_to_urgency(intent: str) -> str:
-    if intent in ("complaint", "request"):
+    if intent == "complaint":
         return "high"
-    if intent == "question":
+    if intent in ("request", "question"):
         return "medium"
     return "low"
+
+
+def _time_aware_urgency(intent: str, text: str) -> str:
+    """Combine intent urgency with time proximity: today/now → high,
+    tomorrow → at least medium."""
+    urgency = _intent_to_urgency(intent)
+    lower = (text or "").lower()
+    if any(c in lower for c in _TODAY_CUES):
+        return "high"
+    if any(c in lower for c in _TOMORROW_CUES):
+        urgency = _RANK_URGENCY[max(_URGENCY_RANK[urgency], 1)]
+    return urgency
 
 
 def _make_action(sender: str, summary: str, intent: str) -> ActionItem:
@@ -37,7 +56,7 @@ def _make_action(sender: str, summary: str, intent: str) -> ActionItem:
         type=_intent_to_type(intent),
         description=summary,
         sender=sender,
-        urgency=_intent_to_urgency(intent),
+        urgency=_time_aware_urgency(intent, summary),
         source_summary=summary,
     )
 
